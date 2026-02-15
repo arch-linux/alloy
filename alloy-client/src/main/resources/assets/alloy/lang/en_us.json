@@ -1,0 +1,16 @@
+{
+  "alloy.title": "Alloy",
+  "alloy.tagline": "Forged with Alloy",
+  "alloy.menu.singleplayer": "Singleplayer",
+  "alloy.menu.multiplayer": "Multiplayer",
+  "alloy.menu.settings": "Settings",
+  "alloy.menu.mods": "Mods",
+  "alloy.menu.quit": "Quit",
+  "alloy.menu.back_to_game": "Back to Game",
+  "alloy.menu.disconnect": "Disconnect",
+  "alloy.hud.fps": "%d FPS",
+  "alloy.hud.coordinates": "%.1f / %.1f / %.1f",
+  "alloy.mods.title": "Installed Mods",
+  "alloy.mods.none": "No mods installed",
+  "alloy.version": "Alloy %s"
+}

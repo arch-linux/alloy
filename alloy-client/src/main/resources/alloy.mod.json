@@ -1,0 +1,14 @@
+{
+  "id": "alloy-client",
+  "name": "Alloy Client",
+  "version": "0.1.0",
+  "description": "Custom client UI for the Alloy modding ecosystem. Replaces Minecraft's default screens with Alloy-branded equivalents and provides a UI framework for other mods.",
+  "authors": ["arch-linux"],
+  "license": "MIT",
+  "entrypoint": "net.alloymc.client.AlloyClient",
+  "dependencies": {
+    "alloy": ">=0.1.0",
+    "minecraft": "*"
+  },
+  "environment": "client"
+}
