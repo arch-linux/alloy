@@ -197,11 +197,13 @@ public final class AlloyLoader {
                 throw new RuntimeException("Entrypoint class '" + entrypoint
                         + "' in mod '" + mod.id() + "' has no public no-arg constructor. "
                         + "Add a public constructor with no parameters.", e);
-            } catch (RuntimeException e) {
-                throw e;
             } catch (Exception e) {
-                throw new RuntimeException("Failed to initialize mod '" + mod.id()
-                        + "': " + e.getMessage(), e);
+                System.err.println();
+                System.err.println("[Alloy] ERROR: Mod '" + mod.id() + "' failed to initialize:");
+                System.err.println("[Alloy]   " + e.getClass().getSimpleName() + ": " + e.getMessage());
+                e.printStackTrace(System.err);
+                System.err.println("[Alloy] Skipping mod '" + mod.id() + "' — the game will continue without it.");
+                System.err.println();
             }
         }
 

@@ -234,6 +234,17 @@ public final class AlloyMappings {
         // Alloy loader JAR (if provided)
         if (loaderJarPath != null && !loaderJarPath.isBlank()) {
             cp.append(loaderJarPath).append(":");
+
+            // Alloy API JAR — resolve relative to the loader JAR
+            Path loaderPath = Path.of(loaderJarPath).toAbsolutePath().getParent();
+            Path apiDir = loaderPath.resolve("../../alloy-api/build/libs").normalize();
+            if (Files.isDirectory(apiDir)) {
+                try (var stream = Files.newDirectoryStream(apiDir, "alloy-api-*.jar")) {
+                    for (Path apiJar : stream) {
+                        cp.append(apiJar.toAbsolutePath()).append(":");
+                    }
+                }
+            }
         }
 
         // Client JAR
