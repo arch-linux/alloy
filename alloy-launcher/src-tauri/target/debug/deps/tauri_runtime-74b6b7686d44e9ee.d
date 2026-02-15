@@ -1,9 +1,0 @@
-/Users/archlinuxusa/Desktop/alloy/alloy-launcher/src-tauri/target/debug/deps/tauri_runtime-74b6b7686d44e9ee.d: /Users/archlinuxusa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-2.10.0/src/lib.rs /Users/archlinuxusa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-2.10.0/src/dpi.rs /Users/archlinuxusa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-2.10.0/src/monitor.rs /Users/archlinuxusa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-2.10.0/src/webview.rs /Users/archlinuxusa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-2.10.0/src/window.rs
-
-/Users/archlinuxusa/Desktop/alloy/alloy-launcher/src-tauri/target/debug/deps/libtauri_runtime-74b6b7686d44e9ee.rmeta: /Users/archlinuxusa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-2.10.0/src/lib.rs /Users/archlinuxusa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-2.10.0/src/dpi.rs /Users/archlinuxusa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-2.10.0/src/monitor.rs /Users/archlinuxusa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-2.10.0/src/webview.rs /Users/archlinuxusa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-2.10.0/src/window.rs
-
-/Users/archlinuxusa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-2.10.0/src/lib.rs:
-/Users/archlinuxusa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-2.10.0/src/dpi.rs:
-/Users/archlinuxusa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-2.10.0/src/monitor.rs:
-/Users/archlinuxusa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-2.10.0/src/webview.rs:
-/Users/archlinuxusa/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-2.10.0/src/window.rs:

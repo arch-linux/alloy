@@ -33,6 +33,14 @@ logs/
 cache/
 minecraft/
 
+# Node
+node_modules/
+dist/
+.vite/
+
+# Rust
+target/
+
 # Environment
 .env
 *.local
