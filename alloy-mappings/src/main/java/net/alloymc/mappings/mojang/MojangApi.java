@@ -48,6 +48,7 @@ public final class MojangApi {
             String mainClass,
             Download client,
             Download clientMappings,
+            Download server,
             AssetIndexInfo assetIndex,
             List<Library> libraries
     ) {}
@@ -117,6 +118,7 @@ public final class MojangApi {
         JsonObject downloads = metadata.getAsJsonObject("downloads");
         Download client = parseDownload(downloads, "client");
         Download clientMappings = parseDownload(downloads, "client_mappings");
+        Download server = parseDownload(downloads, "server");
 
         if (client == null) {
             throw new IOException("Minecraft " + version.id() + " has no client JAR download.");
@@ -143,7 +145,7 @@ public final class MojangApi {
         // Libraries
         List<Library> libraries = parseLibraries(metadata.getAsJsonArray("libraries"));
 
-        return new VersionDetails(version.id(), mainClass, client, clientMappings,
+        return new VersionDetails(version.id(), mainClass, client, clientMappings, server,
                 assetIndex, libraries);
     }
 

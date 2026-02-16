@@ -29,7 +29,7 @@ subprojects {
     }
 }
 
-// ---- Launch Task ----
+// ---- Launch Tasks ----
 
 tasks.register("launchClient") {
     group = "alloy"
@@ -59,6 +59,40 @@ tasks.register("launchClient") {
         val exitCode = process.waitFor()
         if (exitCode != 0) {
             println("[Alloy] Minecraft exited with code $exitCode")
+        }
+    }
+}
+
+tasks.register("launchServer") {
+    group = "alloy"
+    description = "Launch the Minecraft dedicated server with the Alloy mod loader"
+    dependsOn(":alloy-mappings:setupWorkspace")
+
+    doLast {
+        val cacheDir = file("cache")
+        val versionDir = cacheDir.listFiles()
+            ?.filter { it.isDirectory }
+            ?.maxByOrNull { it.lastModified() }
+            ?: error("No cached version found. Run ./gradlew :alloy-mappings:setupWorkspace first.")
+
+        val launchScript = file("${versionDir}/launch-server.sh")
+        if (!launchScript.exists()) {
+            error("launch-server.sh not found in ${versionDir}. Run ./gradlew :alloy-mappings:setupWorkspace first.")
+        }
+
+        val runServerDir = file("run-server")
+        runServerDir.mkdirs()
+
+        println("[Alloy] Launching server from: ${launchScript.absolutePath}")
+
+        val process = ProcessBuilder("bash", launchScript.absolutePath)
+            .directory(runServerDir)
+            .inheritIO()
+            .start()
+
+        val exitCode = process.waitFor()
+        if (exitCode != 0) {
+            println("[Alloy] Server exited with code $exitCode")
         }
     }
 }

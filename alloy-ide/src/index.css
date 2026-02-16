@@ -1,0 +1,193 @@
+@import "tailwindcss";
+
+@theme {
+  /* === Colors === */
+  --color-obsidian-950: #06060a;
+  --color-obsidian-900: #0c0c12;
+  --color-obsidian-800: #14141c;
+  --color-obsidian-700: #1e1e28;
+  --color-obsidian-600: #2a2a36;
+  --color-obsidian-500: #3a3a48;
+
+  --color-stone-500: #6b7280;
+  --color-stone-400: #9ca3af;
+  --color-stone-300: #b8bfc9;
+  --color-stone-200: #d1d5db;
+  --color-stone-100: #f0f0f4;
+
+  --color-ember: #ff6b00;
+  --color-ember-light: #ff8a33;
+  --color-ember-dark: #cc5500;
+  --color-molten: #ff4400;
+  --color-forge-gold: #f0b830;
+
+  /* === Fonts === */
+  --font-heading: "Space Grotesk", sans-serif;
+  --font-body: "Inter", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  /* === Animations === */
+  --animate-fade-in-up: fade-in-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-glow-pulse: glow-pulse 4s ease-in-out infinite;
+  --animate-spark-rise: spark-rise 2.5s ease-out infinite;
+  --animate-float: float 6s ease-in-out infinite;
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(32px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes glow-pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+@keyframes spark-rise {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  70% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-120px) scale(0);
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-12px);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* === Base === */
+html {
+  color-scheme: dark;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--color-obsidian-950);
+  color: var(--color-stone-200);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+}
+
+/* === Accessibility === */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* === Grid Overlay === */
+.grid-overlay {
+  background-image: linear-gradient(
+      to right,
+      rgba(255, 255, 255, 0.015) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.015) 1px,
+      transparent 1px
+    );
+  background-size: 40px 40px;
+}
+
+/* === Glow text === */
+.text-glow {
+  text-shadow:
+    0 0 20px rgba(255, 107, 0, 0.4),
+    0 0 60px rgba(255, 107, 0, 0.15);
+}
+
+/* === Scrollbar === */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-obsidian-600);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-ember);
+}
+
+/* === Selection === */
+::selection {
+  background-color: var(--color-ember);
+  color: var(--color-obsidian-950);
+}
+
+/* === CodeMirror Reset === */
+.cm-editor {
+  height: 100%;
+  font-family: var(--font-mono);
+}
+
+.cm-editor .cm-scroller {
+  font-family: var(--font-mono);
+}
+
+.cm-editor.cm-focused {
+  outline: none;
+}
+
+/* === Property Inspector Inputs === */
+.prop-input {
+  width: 100%;
+  background: var(--color-obsidian-950);
+  border: 1px solid var(--color-obsidian-600);
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 11px;
+  color: var(--color-stone-200);
+  font-family: var(--font-mono);
+  transition: border-color 0.15s;
+}
+.prop-input:focus {
+  outline: none;
+  border-color: var(--color-ember);
+  box-shadow: 0 0 0 1px rgba(255, 107, 0, 0.2);
+}
+.prop-input::placeholder {
+  color: var(--color-stone-500);
+}

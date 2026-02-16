@@ -1,0 +1,14 @@
+{
+  "id": "alloy-core",
+  "name": "Alloy Core",
+  "version": "0.1.0",
+  "description": "Built-in server administration mod for the Alloy modding ecosystem. Provides core commands, permission management, and TPS monitoring.",
+  "authors": ["Alloy Team"],
+  "license": "MIT",
+  "entrypoint": "net.alloymc.core.AlloyCore",
+  "dependencies": {
+    "alloy": ">=0.1.0",
+    "minecraft": "*"
+  },
+  "environment": "both"
+}

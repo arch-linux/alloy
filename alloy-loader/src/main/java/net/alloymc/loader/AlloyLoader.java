@@ -1,8 +1,16 @@
 package net.alloymc.loader;
 
+import net.alloymc.api.AlloyAPI;
+import net.alloymc.api.LaunchEnvironment;
+import net.alloymc.api.command.CommandRegistry;
+import net.alloymc.api.event.EventBus;
+import net.alloymc.api.permission.PermissionRegistry;
 import net.alloymc.loader.api.ModInitializer;
+import net.alloymc.loader.impl.StubScheduler;
+import net.alloymc.loader.impl.StubServer;
 import net.alloymc.loader.launch.AlloyClassLoader;
 import net.alloymc.loader.launch.GameLauncher;
+import net.alloymc.loader.launch.ServerLauncher;
 import net.alloymc.loader.mod.DependencyResolver;
 import net.alloymc.loader.mod.LoadedMod;
 import net.alloymc.loader.mod.ModCandidate;
@@ -69,20 +77,126 @@ public final class AlloyLoader {
     // Bootstrap
     // ------------------------------------------------------------------
 
-    public static void main(String[] args) {
+    /**
+     * Called by the Java agent ({@link net.alloymc.loader.agent.AlloyAgent}) during
+     * premain to initialize the Alloy API and discover/load mods, without launching
+     * Minecraft (since MC is already being launched via {@code -jar server.jar}).
+     */
+    public static void bootstrap() {
         long startTime = System.currentTimeMillis();
+        LaunchEnvironment environment = LaunchEnvironment.SERVER;
+
+        String envProp = System.getProperty("alloy.environment");
+        if ("client".equalsIgnoreCase(envProp)) {
+            environment = LaunchEnvironment.CLIENT;
+        }
 
         System.out.println();
         System.out.println("[Alloy] ========================================");
         System.out.println("[Alloy]  Alloy Mod Loader v" + VERSION);
+        System.out.println("[Alloy]  Environment: " + environment.name());
         System.out.println("[Alloy] ========================================");
         System.out.println();
 
         try {
-            // Find game directory
-            Path gameDir = findGameDir(args);
+            Path gameDir = Path.of(
+                    System.getProperty("alloy.gameDir",
+                            System.getProperty("user.dir")));
             Path modsDir = gameDir.resolve("mods");
 
+            System.out.println("[Alloy] Game directory: " + gameDir.toAbsolutePath());
+            System.out.println("[Alloy] Mods directory: " + modsDir.toAbsolutePath());
+
+            if (!Files.isDirectory(modsDir)) {
+                Files.createDirectories(modsDir);
+                System.out.println("[Alloy] Created mods directory");
+            }
+
+            // Discover mods
+            System.out.println();
+            System.out.println("[Alloy] Scanning for mods...");
+            List<ModCandidate> candidates = ModDiscovery.discover(modsDir);
+            System.out.println("[Alloy] Discovered " + candidates.size() + " mod(s)");
+
+            // Filter by environment
+            final LaunchEnvironment env = environment;
+            List<ModCandidate> filtered = candidates.stream()
+                    .filter(mod -> env.shouldLoad(mod.metadata().environment()))
+                    .toList();
+
+            // Resolve dependencies
+            List<ModCandidate> sorted = DependencyResolver.resolve(
+                    filtered, MINECRAFT_TARGET, VERSION);
+
+            if (!sorted.isEmpty()) {
+                System.out.println("[Alloy] Load order:");
+                for (int i = 0; i < sorted.size(); i++) {
+                    ModCandidate mod = sorted.get(i);
+                    System.out.println("[Alloy]   " + (i + 1) + ". " + mod.name()
+                            + " v" + mod.metadata().version());
+                }
+            }
+
+            // Build classloader with mod JARs
+            AlloyClassLoader modClassLoader = new AlloyClassLoader(
+                    ClassLoader.getSystemClassLoader());
+            for (ModCandidate mod : sorted) {
+                modClassLoader.addJar(mod.jarPath());
+            }
+
+            // Bootstrap the Alloy API
+            AlloyAPI.initialize(
+                    new StubServer(gameDir),
+                    new EventBus(),
+                    new CommandRegistry(),
+                    new PermissionRegistry(),
+                    new StubScheduler(),
+                    environment
+            );
+            System.out.println("[Alloy] API initialized");
+
+            // Load and initialize mods
+            System.out.println();
+            List<LoadedMod> loaded = initializeMods(sorted, modClassLoader);
+
+            instance = new AlloyLoader(loaded, modClassLoader);
+
+            long elapsed = System.currentTimeMillis() - startTime;
+            System.out.println();
+            System.out.println("[Alloy] " + loaded.size() + " mod(s) loaded in "
+                    + elapsed + "ms");
+            System.out.println();
+
+        } catch (DependencyResolver.DependencyException e) {
+            System.err.println("[Alloy] DEPENDENCY ERROR: " + e.getMessage());
+        } catch (Exception e) {
+            System.err.println("[Alloy] FATAL ERROR during bootstrap: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    public static void main(String[] args) {
+        long startTime = System.currentTimeMillis();
+
+        // Detect launch environment
+        LaunchEnvironment environment = detectLaunchEnvironment(args);
+
+        System.out.println();
+        System.out.println("[Alloy] ========================================");
+        System.out.println("[Alloy]  Alloy Mod Loader v" + VERSION);
+        System.out.println("[Alloy]  Environment: " + environment.name());
+        System.out.println("[Alloy] ========================================");
+        System.out.println();
+
+        try {
+            // Find game directory — server defaults to current working directory
+            Path gameDir = (environment == LaunchEnvironment.SERVER)
+                    ? findServerDir(args)
+                    : findGameDir(args);
+            Path modsDir = gameDir.resolve("mods");
+
+            // Store for EventFiringHook.onServerReady() to pick up
+            System.setProperty("alloy.gameDir", gameDir.toAbsolutePath().toString());
             System.out.println("[Alloy] Game directory: " + gameDir.toAbsolutePath());
             System.out.println("[Alloy] Mods directory: " + modsDir.toAbsolutePath());
 
@@ -98,10 +212,21 @@ public final class AlloyLoader {
             List<ModCandidate> candidates = ModDiscovery.discover(modsDir);
             System.out.println("[Alloy] Discovered " + candidates.size() + " mod(s)");
 
+            // Filter by environment
+            List<ModCandidate> filtered = candidates.stream()
+                    .filter(mod -> environment.shouldLoad(mod.metadata().environment()))
+                    .toList();
+
+            if (filtered.size() < candidates.size()) {
+                int skipped = candidates.size() - filtered.size();
+                System.out.println("[Alloy] Filtered out " + skipped
+                        + " mod(s) not compatible with " + environment.name());
+            }
+
             // Resolve dependencies
             String mcVersion = detectMinecraftVersion(args);
             List<ModCandidate> sorted = DependencyResolver.resolve(
-                    candidates, mcVersion, VERSION);
+                    filtered, mcVersion, VERSION);
 
             if (!sorted.isEmpty()) {
                 System.out.println("[Alloy] Load order:");
@@ -114,10 +239,21 @@ public final class AlloyLoader {
 
             // Build classloader with mod JARs
             AlloyClassLoader modClassLoader = new AlloyClassLoader(
-                    AlloyLoader.class.getClassLoader());
+                    ClassLoader.getSystemClassLoader());
             for (ModCandidate mod : sorted) {
                 modClassLoader.addJar(mod.jarPath());
             }
+
+            // Bootstrap the Alloy API so mods can use it during onInitialize()
+            AlloyAPI.initialize(
+                    new StubServer(gameDir),
+                    new EventBus(),
+                    new CommandRegistry(),
+                    new PermissionRegistry(),
+                    new StubScheduler(),
+                    environment
+            );
+            System.out.println("[Alloy] API initialized");
 
             // Load and initialize mods
             System.out.println();
@@ -130,11 +266,19 @@ public final class AlloyLoader {
             System.out.println();
             System.out.println("[Alloy] " + loaded.size() + " mod(s) loaded in "
                     + elapsed + "ms");
-            System.out.println("[Alloy] Launching Minecraft " + mcVersion + "...");
-            System.out.println();
 
-            // Launch Minecraft
-            GameLauncher.launch(modClassLoader, args);
+            // Launch the appropriate target
+            if (environment == LaunchEnvironment.SERVER) {
+                System.out.println("[Alloy] Launching Minecraft Server " + mcVersion + "...");
+                System.out.println();
+                // Strip Alloy/client-specific args that the MC server doesn't understand
+                String[] serverArgs = filterServerArgs(args);
+                ServerLauncher.launch(modClassLoader, serverArgs);
+            } else {
+                System.out.println("[Alloy] Launching Minecraft " + mcVersion + "...");
+                System.out.println();
+                GameLauncher.launch(modClassLoader, args);
+            }
 
         } catch (DependencyResolver.DependencyException e) {
             System.err.println();
@@ -208,6 +352,66 @@ public final class AlloyLoader {
         }
 
         return loaded;
+    }
+
+    /**
+     * Filters out Alloy/client-specific arguments that the MC dedicated server
+     * doesn't recognize. Keeps only server-compatible args (e.g., nogui).
+     */
+    private static String[] filterServerArgs(String[] args) {
+        // Args with a following value that the server doesn't understand
+        var skipWithValue = java.util.Set.of("--gameDir", "--version", "--assetsDir",
+                "--assetIndex", "--accessToken", "--username", "--uuid",
+                "--userType", "--versionType");
+        // Standalone args to skip
+        var skipStandalone = java.util.Set.of("--server");
+
+        List<String> filtered = new ArrayList<>();
+        for (int i = 0; i < args.length; i++) {
+            if (skipStandalone.contains(args[i])) {
+                continue;
+            }
+            if (skipWithValue.contains(args[i])) {
+                i++; // skip the value too
+                continue;
+            }
+            filtered.add(args[i]);
+        }
+        return filtered.toArray(new String[0]);
+    }
+
+    /**
+     * Detects the launch environment from command-line args or system properties.
+     * Checks for --server flag or -Dalloy.environment=server.
+     */
+    private static LaunchEnvironment detectLaunchEnvironment(String[] args) {
+        // Check system property
+        String envProp = System.getProperty("alloy.environment");
+        if ("server".equalsIgnoreCase(envProp)) {
+            return LaunchEnvironment.SERVER;
+        }
+
+        // Check command-line flag
+        for (String arg : args) {
+            if ("--server".equals(arg)) {
+                return LaunchEnvironment.SERVER;
+            }
+        }
+
+        return LaunchEnvironment.CLIENT;
+    }
+
+    /**
+     * Finds the server directory from command-line args or defaults to CWD.
+     */
+    private static Path findServerDir(String[] args) {
+        for (int i = 0; i < args.length - 1; i++) {
+            if ("--gameDir".equals(args[i])) {
+                return Path.of(args[i + 1]);
+            }
+        }
+        // Server defaults to current working directory
+        return Path.of("").toAbsolutePath();
     }
 
     /**

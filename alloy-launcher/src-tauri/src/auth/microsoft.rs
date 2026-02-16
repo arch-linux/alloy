@@ -4,6 +4,7 @@ use reqwest::Client;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
+use std::time::Duration;
 use url::Url;
 
 const AUTH_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize";
@@ -59,13 +60,18 @@ pub fn wait_for_callback(port: u16) -> Result<String, String> {
     let listener = std::net::TcpListener::bind(format!("127.0.0.1:{}", port))
         .map_err(|e| format!("Failed to bind local server: {}", e))?;
 
+    // Timeout after 2 minutes waiting for browser redirect
     listener
         .set_nonblocking(false)
         .map_err(|e| format!("Failed to set blocking: {}", e))?;
 
     let (mut stream, _) = listener
         .accept()
-        .map_err(|e| format!("Failed to accept connection: {}", e))?;
+        .map_err(|e| format!("Failed to accept connection (timed out?): {}", e))?;
+
+    stream
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .map_err(|e| format!("Failed to set read timeout: {}", e))?;
 
     let mut buf = [0u8; 4096];
     let n = stream

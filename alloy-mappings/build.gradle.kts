@@ -34,7 +34,7 @@ tasks.register<JavaExec>("setupWorkspace") {
         it.outputs.files.singleFile.absolutePath
     }
 
-    dependsOn(":alloy-loader:jar")
+    dependsOn(":alloy-loader:jar", ":alloy-api:jar", ":alloy-core:jar")
 
     args = listOf(mcVersion, cacheDir)
 

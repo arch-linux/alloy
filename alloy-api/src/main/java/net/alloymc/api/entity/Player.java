@@ -2,6 +2,7 @@ package net.alloymc.api.entity;
 
 import net.alloymc.api.block.Block;
 import net.alloymc.api.block.BlockFace;
+import net.alloymc.api.command.CommandSender;
 import net.alloymc.api.inventory.Inventory;
 import net.alloymc.api.inventory.ItemStack;
 import net.alloymc.api.inventory.Material;
@@ -10,8 +11,9 @@ import net.alloymc.api.world.Location;
 
 /**
  * Represents a connected player.
+ * A Player is always a valid {@link CommandSender}.
  */
-public interface Player extends LivingEntity, PermissionHolder {
+public interface Player extends LivingEntity, CommandSender {
 
     /**
      * The player's display name.

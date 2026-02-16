@@ -2,6 +2,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::time::Duration;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MinecraftProfile {
@@ -53,6 +54,8 @@ impl AppState {
         Self {
             http_client: Client::builder()
                 .user_agent("AlloyLauncher/0.1.0")
+                .timeout(Duration::from_secs(30))
+                .connect_timeout(Duration::from_secs(10))
                 .build()
                 .expect("failed to build HTTP client"),
             base_dir,

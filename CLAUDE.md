@@ -25,21 +25,63 @@ Alloy is a from-scratch Minecraft modding ecosystem. Not a fork, not built on Fo
 - **Modular by default.** Components must be independently understandable. A developer working on the event bus shouldn't need to understand the bytecode injection system. Clean interfaces between layers.
 - **The build is the source of truth.** `./gradlew build` must do everything: fetch Minecraft, apply mappings, compile, test. If it's not in the build, it doesn't exist. No "oh you also need to run this other script first" — that's how projects rot.
 
+## Unified Build Tool — anvil
+
+The `anvil` script at the repo root builds any combination of targets:
+
+```bash
+./anvil --all                    # Build everything
+./anvil --ide --dev              # Launch the IDE in dev mode
+./anvil --launcher --dev         # Launch the launcher in dev mode
+./anvil --client --api           # Build Java client + API
+./anvil --java                   # Build all Java modules
+./anvil --apps                   # Build both Tauri apps
+./anvil --java --clean           # Clean + rebuild all Java
+./anvil --xxWeLoveClaudexx       # :)
+```
+
+**Dev ports:** Launcher = 1420, IDE = 1425 (can run simultaneously)
+
 ## Architecture
 
+> **IMPORTANT: This repo contains TWO Tauri apps. They are DIFFERENT applications.**
+> - `alloy-launcher/` — Game launcher for PLAYERS (auth, download, launch Minecraft)
+> - `alloy-ide/` — Mod development IDE for DEVELOPERS (code editor, GUI builder, terminal)
+> Do NOT confuse them. They have different purposes, dependencies, and app identifiers.
+
 ```
-alloy/                          — This repo: core ecosystem (monorepo during early dev)
+alloy/                          — Monorepo: the entire Alloy ecosystem
+├── anvil                       — Unified build script (./anvil --help)
+├── alloy-mappings/             — Deobfuscation pipeline: fetches Mojang maps, remaps JARs
 ├── alloy-loader/               — Mod loader: classloading, bytecode injection, mod lifecycle
 ├── alloy-api/                  — Modding API: events, registries, hooks (what modders code against)
-├── alloy-mappings/             — Deobfuscation pipeline: fetches Mojang maps, remaps JARs
+├── alloy-core/                 — Core modding infrastructure
+├── alloy-client/               — Client-side runtime
 ├── alloy-packs/                — Modpack format spec & tooling
 ├── alloy-installer/            — Installs Alloy into a Minecraft profile
-├── alloy-launcher/             — Desktop app (Tauri + React/Svelte frontend)
+├── alloy-launcher/             — GAME LAUNCHER: Tauri app (auth, download, launch MC) [port 1420]
+├── alloy-ide/                  — MODDING IDE: Tauri app (editor, GUI builder, terminal) [port 1425]
 ├── alloy-hub/                  — Backend API for mod/pack distribution (future)
-└── docs/                       — Internal documentation
+├── docs/                       — Internal documentation
+├── build.gradle.kts            — Root Gradle config (Java modules only)
+└── settings.gradle.kts         — Gradle module includes
 
 alloymc-web/                    — Separate repo: website (alloymc.net)
 ```
+
+### Two Tauri Apps — Quick Reference
+
+| | Alloy Launcher | Alloy IDE |
+|---|---|---|
+| **Purpose** | Launch Minecraft with Alloy | Develop Alloy mods |
+| **Users** | Players | Mod developers |
+| **Directory** | `alloy-launcher/` | `alloy-ide/` |
+| **App ID** | `net.alloymc.launcher` | `net.alloymc.ide` |
+| **Dev port** | 1420 | 1425 |
+| **Dev command** | `./anvil --launcher --dev` | `./anvil --ide --dev` |
+| **Build command** | `./anvil --launcher` | `./anvil --ide` |
+| **Key deps** | keyring, auth, download | CodeMirror 6, xterm.js, MCP |
+| **Window** | 1024x640 | 1280x800 |
 
 ### Component Responsibilities
 

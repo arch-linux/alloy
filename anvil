@@ -1,0 +1,323 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ============================================================================
+# anvil — Unified build tool for the Alloy ecosystem
+# Usage: ./anvil [targets...] [options]
+#
+# Targets:
+#   --all          Build everything
+#   --java         Build all Java modules (mappings, loader, api, core, client)
+#   --apps         Build all Tauri apps (launcher + ide)
+#   --client       Build alloy-client (Java)
+#   --server       Build and run the test server
+#   --loader       Build alloy-loader (Java)
+#   --api          Build alloy-api (Java)
+#   --core         Build alloy-core (Java)
+#   --mappings     Build alloy-mappings (Java)
+#   --launcher     Build Alloy Launcher (Tauri)
+#   --ide          Build Alloy IDE (Tauri)
+#
+# Options:
+#   --dev          Run in dev mode instead of production build
+#   --clean        Clean build artifacts before building
+#   --help         Show this help message
+#
+# Examples:
+#   ./anvil --all                    Build everything
+#   ./anvil --ide --dev              Run the IDE in dev mode
+#   ./anvil --client --api           Build Java client and API
+#   ./anvil --launcher --ide         Build both Tauri apps
+#   ./anvil --java --clean           Clean + rebuild all Java
+#   ./anvil --xxWeLoveClaudexx       :)
+# ============================================================================
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+EMBER='\033[38;2;255;107;0m'
+GOLD='\033[38;2;240;184;48m'
+BOLD='\033[1m'
+DIM='\033[2m'
+NC='\033[0m'
+
+# State
+BUILD_JAVA=false
+BUILD_CLIENT=false
+BUILD_SERVER=false
+BUILD_LOADER=false
+BUILD_API=false
+BUILD_CORE=false
+BUILD_MAPPINGS=false
+BUILD_LAUNCHER=false
+BUILD_IDE=false
+DEV_MODE=false
+CLEAN=false
+LOVE_CLAUDE=false
+SHOW_HELP=false
+NO_TARGETS=true
+
+banner() {
+    echo ""
+    echo -e "${EMBER}    ╔═══════════════════════════════════════╗${NC}"
+    echo -e "${EMBER}    ║${NC}${BOLD}         ⚒  ANVIL BUILD TOOL  ⚒         ${NC}${EMBER}║${NC}"
+    echo -e "${EMBER}    ║${NC}${DIM}          Alloy Modding Platform         ${NC}${EMBER}║${NC}"
+    echo -e "${EMBER}    ╚═══════════════════════════════════════╝${NC}"
+    echo ""
+}
+
+log()     { echo -e "${CYAN}[anvil]${NC} $1"; }
+success() { echo -e "${GREEN}[anvil]${NC} ✓ $1"; }
+warn()    { echo -e "${YELLOW}[anvil]${NC} ⚠ $1"; }
+err()     { echo -e "${RED}[anvil]${NC} ✗ $1"; }
+header()  { echo -e "\n${EMBER}━━━${NC} ${BOLD}$1${NC} ${EMBER}━━━${NC}"; }
+
+show_help() {
+    banner
+    echo "Usage: ./anvil [targets...] [options]"
+    echo ""
+    echo -e "${BOLD}Targets:${NC}"
+    echo "  --all          Build everything"
+    echo "  --java         Build all Java modules (mappings, loader, api, core, client)"
+    echo "  --apps         Build all Tauri apps (launcher + ide)"
+    echo "  --client       Build alloy-client (Java)"
+    echo "  --server       Build and run the test server"
+    echo "  --loader       Build alloy-loader (Java)"
+    echo "  --api          Build alloy-api (Java)"
+    echo "  --core         Build alloy-core (Java)"
+    echo "  --mappings     Build alloy-mappings (Java)"
+    echo "  --launcher     Build Alloy Launcher (Tauri)"
+    echo "  --ide          Build Alloy IDE (Tauri)"
+    echo ""
+    echo -e "${BOLD}Options:${NC}"
+    echo "  --dev          Run in dev mode (hot reload) instead of production build"
+    echo "  --clean        Clean build artifacts before building"
+    echo "  --help         Show this help message"
+    echo ""
+    echo -e "${BOLD}Examples:${NC}"
+    echo "  ./anvil --all                Build the entire Alloy ecosystem"
+    echo "  ./anvil --ide --dev          Launch the IDE in dev mode"
+    echo "  ./anvil --launcher --dev     Launch the launcher in dev mode"
+    echo "  ./anvil --client --api       Build Java client + API modules"
+    echo "  ./anvil --java --clean       Clean and rebuild all Java modules"
+    echo "  ./anvil --apps               Build both Tauri apps for production"
+    echo ""
+    echo -e "${DIM}Ports: Launcher=1420, IDE=1425${NC}"
+    echo ""
+}
+
+# Parse arguments
+for arg in "$@"; do
+    case "$arg" in
+        --all)
+            BUILD_JAVA=true; BUILD_LAUNCHER=true; BUILD_IDE=true
+            NO_TARGETS=false ;;
+        --java)
+            BUILD_JAVA=true; NO_TARGETS=false ;;
+        --apps)
+            BUILD_LAUNCHER=true; BUILD_IDE=true; NO_TARGETS=false ;;
+        --client)
+            BUILD_CLIENT=true; NO_TARGETS=false ;;
+        --server)
+            BUILD_SERVER=true; NO_TARGETS=false ;;
+        --loader)
+            BUILD_LOADER=true; NO_TARGETS=false ;;
+        --api)
+            BUILD_API=true; NO_TARGETS=false ;;
+        --core)
+            BUILD_CORE=true; NO_TARGETS=false ;;
+        --mappings)
+            BUILD_MAPPINGS=true; NO_TARGETS=false ;;
+        --launcher)
+            BUILD_LAUNCHER=true; NO_TARGETS=false ;;
+        --ide)
+            BUILD_IDE=true; NO_TARGETS=false ;;
+        --dev)
+            DEV_MODE=true ;;
+        --clean)
+            CLEAN=true ;;
+        --help|-h)
+            SHOW_HELP=true ;;
+        --xxWeLoveClaudexx)
+            LOVE_CLAUDE=true; NO_TARGETS=false ;;
+        *)
+            err "Unknown argument: $arg"
+            echo "Run ./anvil --help for usage"
+            exit 1 ;;
+    esac
+done
+
+if $SHOW_HELP; then
+    show_help
+    exit 0
+fi
+
+if $NO_TARGETS; then
+    show_help
+    exit 0
+fi
+
+# Easter egg
+if $LOVE_CLAUDE; then
+    banner
+    echo -e "${GOLD}    ♥  We love Claude too! Building EVERYTHING with extra love  ♥${NC}"
+    echo ""
+    BUILD_JAVA=true
+    BUILD_LAUNCHER=true
+    BUILD_IDE=true
+fi
+
+banner
+
+# Expand --java into individual modules
+if $BUILD_JAVA; then
+    BUILD_MAPPINGS=true
+    BUILD_LOADER=true
+    BUILD_API=true
+    BUILD_CORE=true
+    BUILD_CLIENT=true
+fi
+
+# Track results
+FAILED=()
+SUCCEEDED=()
+
+run_step() {
+    local name="$1"
+    shift
+    header "$name"
+    if "$@"; then
+        success "$name complete"
+        SUCCEEDED+=("$name")
+    else
+        err "$name failed"
+        FAILED+=("$name")
+    fi
+}
+
+# ── Clean ──────────────────────────────────────────────────────────────
+
+if $CLEAN; then
+    header "Cleaning build artifacts"
+
+    if $BUILD_JAVA || $BUILD_MAPPINGS || $BUILD_LOADER || $BUILD_API || $BUILD_CORE || $BUILD_CLIENT; then
+        log "Cleaning Java build..."
+        ./gradlew clean 2>/dev/null || true
+        success "Java artifacts cleaned"
+    fi
+
+    if $BUILD_LAUNCHER; then
+        log "Cleaning launcher build..."
+        rm -rf alloy-launcher/dist alloy-launcher/src-tauri/target 2>/dev/null || true
+        success "Launcher artifacts cleaned"
+    fi
+
+    if $BUILD_IDE; then
+        log "Cleaning IDE build..."
+        rm -rf alloy-ide/dist alloy-ide/src-tauri/target 2>/dev/null || true
+        success "IDE artifacts cleaned"
+    fi
+    echo ""
+fi
+
+# ── Java Modules ───────────────────────────────────────────────────────
+
+build_gradle_module() {
+    local module="$1"
+    local task="${2:-build}"
+    log "Running: ./gradlew :${module}:${task}"
+    ./gradlew ":${module}:${task}" --no-daemon
+}
+
+if $BUILD_MAPPINGS; then
+    run_step "alloy-mappings" build_gradle_module "alloy-mappings"
+fi
+
+if $BUILD_LOADER; then
+    run_step "alloy-loader" build_gradle_module "alloy-loader"
+fi
+
+if $BUILD_API; then
+    run_step "alloy-api" build_gradle_module "alloy-api"
+fi
+
+if $BUILD_CORE; then
+    run_step "alloy-core" build_gradle_module "alloy-core"
+fi
+
+if $BUILD_CLIENT; then
+    run_step "alloy-client" build_gradle_module "alloy-client"
+fi
+
+if $BUILD_SERVER; then
+    header "Test Server"
+    log "Running: ./gradlew launchServer"
+    ./gradlew launchServer --no-daemon
+fi
+
+# ── Tauri Apps ─────────────────────────────────────────────────────────
+
+build_tauri_app() {
+    local dir="$1"
+    local name="$2"
+
+    if [ ! -d "$dir" ]; then
+        err "$name directory not found: $dir"
+        return 1
+    fi
+
+    cd "$dir"
+
+    # Install deps if needed
+    if [ ! -d "node_modules" ]; then
+        log "Installing $name dependencies..."
+        bun install
+    fi
+
+    if $DEV_MODE; then
+        log "Starting $name in dev mode..."
+        bun tauri dev
+    else
+        log "Building $name for production..."
+        bun tauri build
+    fi
+
+    cd "$SCRIPT_DIR"
+}
+
+if $BUILD_LAUNCHER; then
+    run_step "Alloy Launcher" build_tauri_app "alloy-launcher" "Alloy Launcher"
+fi
+
+if $BUILD_IDE; then
+    run_step "Alloy IDE" build_tauri_app "alloy-ide" "Alloy IDE"
+fi
+
+# ── Summary ────────────────────────────────────────────────────────────
+
+echo ""
+echo -e "${EMBER}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+if [ ${#SUCCEEDED[@]} -gt 0 ]; then
+    echo -e "${GREEN}  Succeeded:${NC} ${SUCCEEDED[*]}"
+fi
+
+if [ ${#FAILED[@]} -gt 0 ]; then
+    echo -e "${RED}  Failed:${NC} ${FAILED[*]}"
+fi
+
+echo -e "${EMBER}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+if $LOVE_CLAUDE; then
+    echo -e "\n${GOLD}  Built with love. Forged with Alloy. Powered by Claude. ♥${NC}\n"
+fi
+
+if [ ${#FAILED[@]} -gt 0 ]; then
+    exit 1
+fi

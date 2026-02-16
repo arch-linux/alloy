@@ -1,0 +1,24 @@
+{
+  "groups": {
+    "default": {
+      "permissions": [
+        "alloy.command.mods",
+        "alloy.command.alloy"
+      ],
+      "parents": []
+    },
+    "moderator": {
+      "permissions": [
+        "alloy.command.tps"
+      ],
+      "parents": ["default"]
+    },
+    "admin": {
+      "permissions": [
+        "*"
+      ],
+      "parents": ["moderator"]
+    }
+  },
+  "users": {}
+}

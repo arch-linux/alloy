@@ -25,9 +25,25 @@ gradle/wrapper/gradle-wrapper.jar
 .DS_Store
 Thumbs.db
 
-# Runtime
+# Runtime / server data
 run/
+run-server/
+test-server/
 logs/
+world/
+crash-reports/
+banned-ips.json
+banned-players.json
+usercache.json
+whitelist.json
+ops.json
+eula.txt
+server.properties
+permissions.json
+session.lock
+
+# JVM crash logs
+hs_err_pid*.log
 
 # Minecraft JARs (downloaded at build time, never committed)
 cache/
@@ -40,6 +56,9 @@ dist/
 
 # Rust
 target/
+
+# Release artifacts
+target_out/
 
 # Environment
 .env
