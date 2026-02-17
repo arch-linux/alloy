@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { FolderOpen, Clock, Hammer, Shield } from "lucide-react";
+import { FolderOpen, Clock, Hammer, Shield, FileText } from "lucide-react";
 import { useStore } from "../../lib/store";
 import alloyLogo from "../../assets/alloy-logo.svg";
 
@@ -8,6 +8,8 @@ export default function WelcomeTab() {
   const recentProjects = useStore((s) => s.recentProjects);
   const openProject = useStore((s) => s.openProject);
   const loadRecentProjects = useStore((s) => s.loadRecentProjects);
+  const recentlyClosed = useStore((s) => s.recentlyClosed);
+  const openFile = useStore((s) => s.openFile);
 
   const isMac = navigator.platform.includes("Mac");
   const mod = isMac ? "\u2318" : "Ctrl";
@@ -86,6 +88,29 @@ export default function WelcomeTab() {
           Open Folder
         </button>
       </div>
+
+      {/* Recently closed files */}
+      {recentlyClosed.length > 0 && (
+        <div className="max-w-[650px] w-full">
+          <div className="flex items-center gap-2 mb-2">
+            <FileText size={12} className="text-stone-500" />
+            <span className="text-[11px] text-stone-500 uppercase tracking-wider font-semibold">
+              Recently Closed
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {recentlyClosed.slice(0, 8).map((f, i) => (
+              <button
+                key={f.path + i}
+                onClick={() => openFile(f.path, f.name)}
+                className="px-2.5 py-1 rounded-md text-[11px] text-stone-400 bg-obsidian-800 border border-obsidian-600 hover:bg-obsidian-700 hover:text-stone-200 transition-colors truncate max-w-[150px]"
+              >
+                {f.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Two column layout */}
       <div className="flex gap-12 max-w-[650px] w-full">

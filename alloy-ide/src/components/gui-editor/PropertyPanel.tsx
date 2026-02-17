@@ -60,6 +60,41 @@ function ProjectProperties({
             />
           </Field>
         </div>
+        <Field label="Background Texture">
+          <div className="flex items-center gap-1">
+            <input
+              type="text"
+              value={project.background_texture || ""}
+              onChange={(e) => onUpdate({ background_texture: e.target.value || null })}
+              className="prop-input flex-1"
+              placeholder="texture path..."
+            />
+            <button
+              onClick={async () => {
+                try {
+                  const { open } = await import("@tauri-apps/plugin-dialog");
+                  const result = await open({
+                    filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg"] }],
+                  });
+                  if (result) {
+                    onUpdate({ background_texture: result as string });
+                  }
+                } catch { /* dialog not available */ }
+              }}
+              className="px-1.5 py-0.5 rounded text-[9px] text-stone-400 bg-obsidian-700 border border-obsidian-600 hover:bg-obsidian-600 transition-colors shrink-0"
+            >
+              ...
+            </button>
+          </div>
+          {project.background_texture && (
+            <button
+              onClick={() => onUpdate({ background_texture: null })}
+              className="text-[9px] text-molten hover:text-molten/80 mt-1 cursor-pointer"
+            >
+              Remove texture
+            </button>
+          )}
+        </Field>
         <div className="pt-2 border-t border-obsidian-700">
           <div className="text-[10px] text-stone-600">
             Standard Minecraft GUI: 176x166
@@ -317,13 +352,29 @@ function renderTypeProperties(
       return (
         <>
           <Field label="Texture">
-            <input
-              type="text"
-              value={(el.properties.texture as string) || ""}
-              onChange={(e) => updateProp("texture", e.target.value)}
-              className="prop-input"
-              placeholder="modid:path"
-            />
+            <div className="flex items-center gap-1">
+              <input
+                type="text"
+                value={(el.properties.texture as string) || ""}
+                onChange={(e) => updateProp("texture", e.target.value)}
+                className="prop-input flex-1"
+                placeholder="modid:path"
+              />
+              <button
+                onClick={async () => {
+                  try {
+                    const { open } = await import("@tauri-apps/plugin-dialog");
+                    const result = await open({
+                      filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg"] }],
+                    });
+                    if (result) updateProp("texture", result as string);
+                  } catch { /* dialog not available */ }
+                }}
+                className="px-1 py-0.5 rounded text-[9px] text-stone-400 bg-obsidian-700 border border-obsidian-600 hover:bg-obsidian-600 transition-colors shrink-0"
+              >
+                ...
+              </button>
+            </div>
           </Field>
           <div className="flex gap-2">
             <Field label="U">
@@ -342,6 +393,27 @@ function renderTypeProperties(
                 className="prop-input"
               />
             </Field>
+          </div>
+          <div className="flex gap-2">
+            <Field label="Tex Width">
+              <input
+                type="number"
+                value={(el.properties.tex_width as number) ?? 256}
+                onChange={(e) => updateProp("tex_width", +e.target.value)}
+                className="prop-input"
+              />
+            </Field>
+            <Field label="Tex Height">
+              <input
+                type="number"
+                value={(el.properties.tex_height as number) ?? 256}
+                onChange={(e) => updateProp("tex_height", +e.target.value)}
+                className="prop-input"
+              />
+            </Field>
+          </div>
+          <div className="text-[9px] text-stone-600">
+            UV coordinates in pixels. Standard texture: 256x256.
           </div>
         </>
       );

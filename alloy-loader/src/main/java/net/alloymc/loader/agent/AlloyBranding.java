@@ -50,7 +50,28 @@ public final class AlloyBranding {
     private static Method drawCenteredStringMethod;
     private static boolean blitErrorLogged;
 
+    // MC classloader — captured from the first MC object we see.
+    // AlloyBranding lives on the bootstrap classpath, so Class.forName()
+    // defaults to the bootstrap CL which can't see MC classes.
+    // We need MC's classloader for all MC class lookups.
+    private static volatile ClassLoader mcClassLoader;
+
     private AlloyBranding() {}
+
+    /**
+     * Loads a class using MC's classloader instead of the bootstrap CL.
+     * Falls back to Thread context CL and then default Class.forName.
+     */
+    private static Class<?> mcClass(String name) throws ClassNotFoundException {
+        if (mcClassLoader != null) {
+            return Class.forName(name, true, mcClassLoader);
+        }
+        ClassLoader ctx = Thread.currentThread().getContextClassLoader();
+        if (ctx != null) {
+            return Class.forName(name, true, ctx);
+        }
+        return Class.forName(name);
+    }
 
     // ============================== Window Icon ==============================
 
@@ -126,6 +147,10 @@ public final class AlloyBranding {
      * @param screenWidth the screen width
      */
     public static void renderLogo(Object guiGraphics, Object font, int screenWidth) {
+        // Capture MC's classloader from the first MC object we receive
+        if (mcClassLoader == null && guiGraphics != null) {
+            mcClassLoader = guiGraphics.getClass().getClassLoader();
+        }
         if (!logoInitialized) {
             initializeLogo();
         }
@@ -161,8 +186,8 @@ public final class AlloyBranding {
             blitDebug.add("[Alloy Blit Search] " + java.time.Instant.now());
 
             // Get RenderPipelines.GUI_TEXTURED -> hpa.at
-            Class<?> renderPipelinesClass = Class.forName("hpa");
-            Class<?> renderPipelineClass = Class.forName("com.mojang.blaze3d.pipeline.RenderPipeline");
+            Class<?> renderPipelinesClass = mcClass("hpa");
+            Class<?> renderPipelineClass = mcClass("com.mojang.blaze3d.pipeline.RenderPipeline");
             guiTexturedPipeline = renderPipelinesClass.getField("at").get(null);
             blitDebug.add("GUI_TEXTURED pipeline: " + guiTexturedPipeline);
 
@@ -267,7 +292,7 @@ public final class AlloyBranding {
             debug.add("PNG bytes: " + pngBytes.length);
 
             // Step 1: NativeImage.read(byte[]) -> fyh.a(byte[])
-            Class<?> nativeImageClass = Class.forName("fyh");
+            Class<?> nativeImageClass = mcClass("fyh");
             debug.add("NativeImage class: " + nativeImageClass);
             Method readMethod = nativeImageClass.getMethod("a", byte[].class);
             debug.add("read method: " + readMethod + " (static=" + java.lang.reflect.Modifier.isStatic(readMethod.getModifiers()) + ")");
@@ -287,7 +312,7 @@ public final class AlloyBranding {
             debug.add("Render size: " + logoRenderWidth + "x" + logoRenderHeight);
 
             // Step 3: DynamicTexture
-            Class<?> dynamicTextureClass = Class.forName("ilc");
+            Class<?> dynamicTextureClass = mcClass("ilc");
             debug.add("DynamicTexture class: " + dynamicTextureClass);
             Constructor<?> texCtor = dynamicTextureClass.getConstructor(
                     Supplier.class, nativeImageClass);
@@ -297,14 +322,14 @@ public final class AlloyBranding {
             debug.add("DynamicTexture created: " + dynamicTexture);
 
             // Step 4: Identifier
-            Class<?> identifierClass = Class.forName("amo");
+            Class<?> identifierClass = mcClass("amo");
             Method fromNsPath = identifierClass.getMethod("a", String.class, String.class);
             debug.add("Identifier.a method: " + fromNsPath + " (static=" + java.lang.reflect.Modifier.isStatic(fromNsPath.getModifiers()) + ")");
             logoIdentifier = fromNsPath.invoke(null, "alloy", "logo");
             debug.add("Identifier: " + logoIdentifier);
 
             // Step 5: Minecraft + TextureManager
-            Class<?> minecraftClass = Class.forName("gfj");
+            Class<?> minecraftClass = mcClass("gfj");
             Method getInstance = minecraftClass.getMethod("V");
             Object minecraft = getInstance.invoke(null);
             debug.add("Minecraft instance: " + (minecraft != null ? "OK" : "NULL"));
@@ -371,6 +396,9 @@ public final class AlloyBranding {
      */
     public static void renderButtonBackground(Object guiGraphics, Object button) {
         try {
+            if (mcClassLoader == null && guiGraphics != null) {
+                mcClassLoader = guiGraphics.getClass().getClassLoader();
+            }
             if (!buttonReflectionInit) {
                 initButtonReflection(guiGraphics, button);
             }
@@ -747,8 +775,8 @@ public final class AlloyBranding {
         }
 
         try {
-            Class<?> clientClass = Class.forName("ca.weblite.objc.Client");
-            Class<?> proxyClass = Class.forName("ca.weblite.objc.Proxy");
+            Class<?> clientClass = mcClass("ca.weblite.objc.Client");
+            Class<?> proxyClass = mcClass("ca.weblite.objc.Proxy");
 
             Object client = clientClass.getMethod("getInstance").invoke(null);
 

@@ -78,6 +78,12 @@ impl AppState {
     }
 }
 
+/// Returns the Alloy base directory (e.g. ~/Library/Application Support/alloy).
+/// Public so other modules (like auth/tokens.rs) can locate persistent files.
+pub fn base_dir() -> PathBuf {
+    dirs_base_dir()
+}
+
 fn dirs_base_dir() -> PathBuf {
     if let Ok(dir) = std::env::var("ALLOY_HOME") {
         return PathBuf::from(dir);

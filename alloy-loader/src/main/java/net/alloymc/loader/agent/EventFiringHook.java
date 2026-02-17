@@ -1487,7 +1487,7 @@ public final class EventFiringHook {
             try {
                 Object inventory = invokeNoArgs(serverPlayer, "gK"); // getInventory
                 if (inventory != null) {
-                    Object selected = getField(inventory, "k"); // selected slot field
+                    Object selected = getField(inventory, "m"); // selected slot field
                     if (selected instanceof Number n) previousSlot = n.intValue();
                 }
             } catch (Exception ignored) {}

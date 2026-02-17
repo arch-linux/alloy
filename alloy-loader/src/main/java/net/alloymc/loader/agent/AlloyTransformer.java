@@ -125,28 +125,33 @@ public final class AlloyTransformer implements ClassFileTransformer {
                             byte[] classfileBuffer) {
         if (className == null) return null;
 
-        // Server-side event transforms (apply to both client and server)
-        byte[] serverResult = switch (className) {
-            case SERVER_GAME_HANDLER_CLASS -> transformServerGameHandler(classfileBuffer);
-            case PLAYER_LIST_CLASS -> transformPlayerList(classfileBuffer);
-            case SERVER_PLAYER_GAME_MODE_CLASS -> transformServerPlayerGameMode(classfileBuffer);
-            case MINECRAFT_SERVER_CLASS -> transformMinecraftServer(classfileBuffer);
-            case SERVER_PLAYER_CLASS -> transformServerPlayer(classfileBuffer);
-            case SERVER_LEVEL_CLASS -> transformServerLevel(classfileBuffer);
-            case LIVING_ENTITY_CLASS -> transformLivingEntity(classfileBuffer);
-            case BLOCK_ITEM_CLASS -> transformBlockItem(classfileBuffer);
-            case BUCKET_ITEM_CLASS -> transformBucketItem(classfileBuffer);
-            case SERVER_EXPLOSION_CLASS -> transformServerExplosion(classfileBuffer);
-            case MOB_CLASS -> transformMob(classfileBuffer);
-            case FLOWING_FLUID_CLASS -> transformFlowingFluid(classfileBuffer);
-            case FIRE_BLOCK_CLASS -> transformFireBlock(classfileBuffer);
-            case PISTON_BASE_BLOCK_CLASS -> transformPistonBaseBlock(classfileBuffer);
-            case DISPENSER_BLOCK_CLASS -> transformDispenserBlock(classfileBuffer);
-            case TREE_GROWER_CLASS -> transformTreeGrower(classfileBuffer);
-            case THROWN_SPLASH_POTION_CLASS -> transformThrownSplashPotion(classfileBuffer);
-            default -> null;
-        };
-        if (serverResult != null) return serverResult;
+        // Server-side event transforms — only apply on dedicated server.
+        // On the client, these hooks call into EventFiringHook which references
+        // API classes (Player, AlloyAPI, etc.) that can trigger ClassNotFoundException
+        // when loaded from MC's classloader hierarchy.
+        if (!"client".equalsIgnoreCase(System.getProperty("alloy.environment"))) {
+            byte[] serverResult = switch (className) {
+                case SERVER_GAME_HANDLER_CLASS -> transformServerGameHandler(classfileBuffer);
+                case PLAYER_LIST_CLASS -> transformPlayerList(classfileBuffer);
+                case SERVER_PLAYER_GAME_MODE_CLASS -> transformServerPlayerGameMode(classfileBuffer);
+                case MINECRAFT_SERVER_CLASS -> transformMinecraftServer(classfileBuffer);
+                case SERVER_PLAYER_CLASS -> transformServerPlayer(classfileBuffer);
+                case SERVER_LEVEL_CLASS -> transformServerLevel(classfileBuffer);
+                case LIVING_ENTITY_CLASS -> transformLivingEntity(classfileBuffer);
+                case BLOCK_ITEM_CLASS -> transformBlockItem(classfileBuffer);
+                case BUCKET_ITEM_CLASS -> transformBucketItem(classfileBuffer);
+                case SERVER_EXPLOSION_CLASS -> transformServerExplosion(classfileBuffer);
+                case MOB_CLASS -> transformMob(classfileBuffer);
+                case FLOWING_FLUID_CLASS -> transformFlowingFluid(classfileBuffer);
+                case FIRE_BLOCK_CLASS -> transformFireBlock(classfileBuffer);
+                case PISTON_BASE_BLOCK_CLASS -> transformPistonBaseBlock(classfileBuffer);
+                case DISPENSER_BLOCK_CLASS -> transformDispenserBlock(classfileBuffer);
+                case TREE_GROWER_CLASS -> transformTreeGrower(classfileBuffer);
+                case THROWN_SPLASH_POTION_CLASS -> transformThrownSplashPotion(classfileBuffer);
+                default -> null;
+            };
+            if (serverResult != null) return serverResult;
+        }
 
         // Server has no LWJGL/GUI classes — skip all client transforms to avoid ClassNotFoundException
         if ("server".equalsIgnoreCase(System.getProperty("alloy.environment"))) {
@@ -347,7 +352,7 @@ public final class AlloyTransformer implements ClassFileTransformer {
                                     mv.visitMethodInsn(Opcodes.INVOKESTATIC,
                                             COMPONENT_CLASS, "a",
                                             "(Ljava/lang/String;)L" + COMPONENT_CLASS + ";",
-                                            true);  // interface method
+                                            true);  // interface method — literal(String)
                                     mv.visitFieldInsn(Opcodes.PUTSTATIC,
                                             TITLE_SCREEN_CLASS, "c",
                                             "L" + COMPONENT_CLASS + ";");

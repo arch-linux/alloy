@@ -10,9 +10,10 @@ import {
   Settings2,
 } from "lucide-react";
 import { showToast } from "../ui/Toast";
-import type { AnimationProject, AnimationTrack, Keyframe, AnimPropertyType, EasingType } from "../../lib/types";
+import type { AnimationProject, AnimationTrack, Keyframe, AnimPropertyType } from "../../lib/types";
 import Timeline from "./Timeline";
 import AnimCodePreview from "./AnimCodePreview";
+import AnimPreview from "./AnimPreview";
 
 interface Props {
   path: string;
@@ -308,35 +309,83 @@ export default function AnimationEditor({ path, content, onSave }: Props) {
 
       {/* Settings panel */}
       {showSettings && (
-        <div className="flex items-center gap-4 px-4 py-2 border-b border-obsidian-700 bg-obsidian-900/50">
-          <div className="flex items-center gap-2">
-            <label className="text-[10px] text-stone-500 uppercase">Name</label>
-            <input
-              type="text"
-              value={project.name}
-              onChange={(e) => updateProject((p) => ({ ...p, name: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_") }))}
-              className="prop-input w-32"
-            />
+        <div className="flex flex-col gap-2 px-4 py-2 border-b border-obsidian-700 bg-obsidian-900/50">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <label className="text-[10px] text-stone-500 uppercase">Name</label>
+              <input
+                type="text"
+                value={project.name}
+                onChange={(e) => updateProject((p) => ({ ...p, name: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_") }))}
+                className="prop-input w-32"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-[10px] text-stone-500 uppercase">Duration</label>
+              <input
+                type="number"
+                value={project.duration_ticks}
+                onChange={(e) => updateProject((p) => ({ ...p, duration_ticks: Math.max(1, +e.target.value) }))}
+                className="prop-input w-16"
+              />
+              <span className="text-[9px] text-stone-600">ticks ({(project.duration_ticks / 20).toFixed(1)}s)</span>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <label className="text-[10px] text-stone-500 uppercase">Duration</label>
-            <input
-              type="number"
-              value={project.duration_ticks}
-              onChange={(e) => updateProject((p) => ({ ...p, duration_ticks: Math.max(1, +e.target.value) }))}
-              className="prop-input w-16"
-            />
-            <span className="text-[9px] text-stone-600">ticks ({(project.duration_ticks / 20).toFixed(1)}s)</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <label className="text-[10px] text-stone-500 uppercase">Sprite Sheet</label>
-            <input
-              type="text"
-              value={project.sprite_sheet || ""}
-              onChange={(e) => updateProject((p) => ({ ...p, sprite_sheet: e.target.value || null }))}
-              className="prop-input w-40"
-              placeholder="path/to/spritesheet.png"
-            />
+          {/* Sprite sheet section */}
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <label className="text-[10px] text-stone-500 uppercase">Sprite Sheet</label>
+              <input
+                type="text"
+                value={project.sprite_sheet || ""}
+                onChange={(e) => updateProject((p) => ({ ...p, sprite_sheet: e.target.value || null }))}
+                className="prop-input w-48"
+                placeholder="path/to/spritesheet.png"
+              />
+              <button
+                onClick={async () => {
+                  try {
+                    const { open } = await import("@tauri-apps/plugin-dialog");
+                    const result = await open({
+                      filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif"] }],
+                    });
+                    if (result) {
+                      updateProject((p) => ({ ...p, sprite_sheet: result as string }));
+                    }
+                  } catch { /* dialog not available in dev */ }
+                }}
+                className="px-1.5 py-0.5 rounded text-[9px] text-stone-400 bg-obsidian-700 border border-obsidian-600 hover:bg-obsidian-600 transition-colors"
+              >
+                Browse
+              </button>
+            </div>
+            {project.sprite_sheet && (
+              <>
+                <div className="flex items-center gap-2">
+                  <label className="text-[10px] text-stone-500 uppercase">Frame W</label>
+                  <input
+                    type="number"
+                    value={project.frame_width || 16}
+                    onChange={(e) => updateProject((p) => ({ ...p, frame_width: Math.max(1, +e.target.value) }))}
+                    className="prop-input w-12"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-[10px] text-stone-500 uppercase">Frame H</label>
+                  <input
+                    type="number"
+                    value={project.frame_height || 16}
+                    onChange={(e) => updateProject((p) => ({ ...p, frame_height: Math.max(1, +e.target.value) }))}
+                    className="prop-input w-12"
+                  />
+                </div>
+                <span className="text-[9px] text-stone-600">
+                  {project.frame_width && project.frame_height
+                    ? `${project.frame_width}x${project.frame_height}px per frame`
+                    : ""}
+                </span>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -347,7 +396,7 @@ export default function AnimationEditor({ path, content, onSave }: Props) {
       ) : (
         <div className="flex flex-1 flex-col min-h-0">
           {/* Preview area */}
-          <AnimPreviewArea
+          <AnimPreview
             project={project}
             playbackTick={playbackTick}
           />
@@ -370,81 +419,3 @@ export default function AnimationEditor({ path, content, onSave }: Props) {
   );
 }
 
-// Inline preview area showing interpolated values
-function AnimPreviewArea({
-  project,
-  playbackTick,
-}: {
-  project: AnimationProject;
-  playbackTick: number;
-}) {
-  if (project.tracks.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-32 text-stone-600 text-[11px]">
-        Add tracks to start animating. Each track controls a property over time.
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex items-center gap-4 px-4 py-3 border-b border-obsidian-700 bg-obsidian-900/30 overflow-x-auto shrink-0">
-      {project.tracks.map((track) => {
-        const value = interpolateAtTick(track, playbackTick);
-        const progress = project.duration_ticks > 0 ? playbackTick / project.duration_ticks : 0;
-
-        return (
-          <div key={track.id} className="flex items-center gap-2 shrink-0">
-            <div className="text-[9px] text-stone-500 uppercase w-16 truncate">
-              {PROPERTY_LABELS[track.property]?.split(" ").pop()}
-            </div>
-            <div className="w-16 h-1.5 bg-obsidian-700 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-ember rounded-full transition-all"
-                style={{ width: `${Math.abs(value) * 100}%` }}
-              />
-            </div>
-            <span className="text-[10px] font-mono text-ember w-10 text-right">
-              {value.toFixed(2)}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function interpolateAtTick(track: AnimationTrack, tick: number): number {
-  const kfs = track.keyframes;
-  if (kfs.length === 0) return 0;
-  if (kfs.length === 1) return kfs[0].value;
-  if (tick <= kfs[0].tick) return kfs[0].value;
-  if (tick >= kfs[kfs.length - 1].tick) return kfs[kfs.length - 1].value;
-
-  // Find surrounding keyframes
-  for (let i = 0; i < kfs.length - 1; i++) {
-    if (tick >= kfs[i].tick && tick <= kfs[i + 1].tick) {
-      const t = (tick - kfs[i].tick) / (kfs[i + 1].tick - kfs[i].tick);
-      const eased = applyEasing(t, kfs[i].easing);
-      return kfs[i].value + (kfs[i + 1].value - kfs[i].value) * eased;
-    }
-  }
-  return kfs[kfs.length - 1].value;
-}
-
-function applyEasing(t: number, easing: EasingType): number {
-  switch (easing) {
-    case "linear":
-      return t;
-    case "ease-in":
-      return t * t;
-    case "ease-out":
-      return 1 - (1 - t) * (1 - t);
-    case "ease-in-out":
-      return t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
-    case "cubic-bezier":
-      // Default cubic bezier approximation
-      return 3 * (1 - t) * (1 - t) * t * 0.25 + 3 * (1 - t) * t * t * 0.75 + t * t * t;
-    default:
-      return t;
-  }
-}

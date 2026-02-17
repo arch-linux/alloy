@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import type { GuiProject, GuiElement } from "../../lib/types";
 
 interface Props {
@@ -120,10 +121,13 @@ export default function GuiCanvas({
           <div
             className="absolute inset-0"
             style={{
-              background: `linear-gradient(135deg, #2a2a36 0%, #1e1e28 50%, #14141c 100%)`,
+              background: project.background_texture
+                ? `url(${convertFileSrc(project.background_texture)}) center/cover`
+                : `linear-gradient(135deg, #2a2a36 0%, #1e1e28 50%, #14141c 100%)`,
               border: `${zoom}px solid`,
               borderColor: "#555 #2a2a2a #2a2a2a #555",
               boxSizing: "border-box",
+              imageRendering: "pixelated",
             }}
           />
 

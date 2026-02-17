@@ -92,20 +92,10 @@ export default function SettingsDialog({ onClose }: SettingsDialogProps) {
                 <div className="text-sm text-stone-200">Word Wrap</div>
                 <div className="text-[11px] text-stone-500">Wrap lines at viewport width</div>
               </div>
-              <button
-                onClick={() => update({ wordWrap: !settings.wordWrap })}
-                className={
-                  "w-10 h-5 rounded-full transition-colors relative " +
-                  (settings.wordWrap ? "bg-ember" : "bg-obsidian-600")
-                }
-              >
-                <span
-                  className={
-                    "absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform " +
-                    (settings.wordWrap ? "translate-x-5" : "translate-x-0.5")
-                  }
-                />
-              </button>
+              <ToggleSwitch
+                value={settings.wordWrap}
+                onChange={(v) => update({ wordWrap: v })}
+              />
             </div>
 
             {/* Line numbers */}
@@ -114,21 +104,66 @@ export default function SettingsDialog({ onClose }: SettingsDialogProps) {
                 <div className="text-sm text-stone-200">Line Numbers</div>
                 <div className="text-[11px] text-stone-500">Show line numbers in gutter</div>
               </div>
-              <button
-                onClick={() => update({ lineNumbers: !settings.lineNumbers })}
-                className={
-                  "w-10 h-5 rounded-full transition-colors relative " +
-                  (settings.lineNumbers ? "bg-ember" : "bg-obsidian-600")
-                }
-              >
-                <span
-                  className={
-                    "absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform " +
-                    (settings.lineNumbers ? "translate-x-5" : "translate-x-0.5")
-                  }
-                />
-              </button>
+              <ToggleSwitch
+                value={settings.lineNumbers}
+                onChange={(v) => update({ lineNumbers: v })}
+              />
             </div>
+
+            {/* Minimap */}
+            <div className="flex items-center justify-between py-2">
+              <div>
+                <div className="text-sm text-stone-200">Minimap</div>
+                <div className="text-[11px] text-stone-500">Show code overview minimap</div>
+              </div>
+              <ToggleSwitch
+                value={settings.minimap}
+                onChange={(v) => update({ minimap: v })}
+              />
+            </div>
+
+            {/* Indent guides */}
+            <div className="flex items-center justify-between py-2">
+              <div>
+                <div className="text-sm text-stone-200">Indent Guides</div>
+                <div className="text-[11px] text-stone-500">Show vertical indent guide lines</div>
+              </div>
+              <ToggleSwitch
+                value={settings.indentGuides}
+                onChange={(v) => update({ indentGuides: v })}
+              />
+            </div>
+
+            {/* Auto-save */}
+            <div className="flex items-center justify-between py-2">
+              <div>
+                <div className="text-sm text-stone-200">Auto Save</div>
+                <div className="text-[11px] text-stone-500">Save files automatically after changes</div>
+              </div>
+              <ToggleSwitch
+                value={settings.autoSave}
+                onChange={(v) => update({ autoSave: v })}
+              />
+            </div>
+
+            {settings.autoSave && (
+              <div className="flex items-center justify-between py-2 pl-4">
+                <div>
+                  <div className="text-sm text-stone-200">Auto Save Delay</div>
+                  <div className="text-[11px] text-stone-500">Delay in ms before saving</div>
+                </div>
+                <select
+                  value={settings.autoSaveDelay}
+                  onChange={(e) => update({ autoSaveDelay: parseInt(e.target.value) })}
+                  className="bg-obsidian-900 border border-obsidian-600 rounded px-2 py-1 text-sm text-stone-200 outline-none focus:border-ember/50"
+                >
+                  <option value={1000}>1 second</option>
+                  <option value={2000}>2 seconds</option>
+                  <option value={5000}>5 seconds</option>
+                  <option value={10000}>10 seconds</option>
+                </select>
+              </div>
+            )}
           </div>
 
           {/* About section */}
@@ -145,5 +180,30 @@ export default function SettingsDialog({ onClose }: SettingsDialogProps) {
         </div>
       </div>
     </div>
+  );
+}
+
+function ToggleSwitch({
+  value,
+  onChange,
+}: {
+  value: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <button
+      onClick={() => onChange(!value)}
+      className={
+        "w-10 h-5 rounded-full transition-colors relative " +
+        (value ? "bg-ember" : "bg-obsidian-600")
+      }
+    >
+      <span
+        className={
+          "absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform " +
+          (value ? "translate-x-5" : "translate-x-0.5")
+        }
+      />
+    </button>
   );
 }

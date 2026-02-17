@@ -1,5 +1,5 @@
 import { useCallback, useRef } from "react";
-import { Terminal, AlertTriangle, FileText } from "lucide-react";
+import { Terminal, AlertTriangle, FileText, MapPin } from "lucide-react";
 import { useStore } from "../../lib/store";
 import type { BottomPanelTab } from "../../lib/types";
 
@@ -7,6 +7,7 @@ const tabs: { id: BottomPanelTab; icon: typeof Terminal; label: string }[] = [
   { id: "terminal", icon: Terminal, label: "Terminal" },
   { id: "problems", icon: AlertTriangle, label: "Problems" },
   { id: "output", icon: FileText, label: "Output" },
+  { id: "references", icon: MapPin, label: "References" },
 ];
 
 export default function BottomPanel({ children }: { children?: React.ReactNode }) {

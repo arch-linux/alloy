@@ -32,18 +32,21 @@ export interface OpenFile {
   language: string;
   dirty: boolean;
   preview?: boolean;
+  pinned?: boolean;
+  externallyModified?: boolean;
 }
 
 export type SidebarPanel = "files" | "search" | "git" | "extensions" | "tasks" | "ai";
 
 export type SplitDirection = "none" | "horizontal" | "vertical";
 
-export type BottomPanelTab = "terminal" | "problems" | "output";
+export type BottomPanelTab = "terminal" | "problems" | "output" | "references";
 
 export interface CursorPosition {
   line: number;
   column: number;
   selected?: number;
+  cursors?: number;
 }
 
 // Search types
@@ -68,6 +71,9 @@ export interface QuickOpenEntry {
 export interface GitStatus {
   branch: string;
   files: GitFileStatus[];
+  staged: GitFileStatus[];
+  ahead: number;
+  behind: number;
 }
 
 export interface GitFileStatus {
@@ -217,4 +223,7 @@ export interface EditorSettings {
   wordWrap: boolean;
   lineNumbers: boolean;
   minimap: boolean;
+  indentGuides: boolean;
+  autoSave: boolean;
+  autoSaveDelay: number; // milliseconds
 }

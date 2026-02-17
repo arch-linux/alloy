@@ -1,4 +1,5 @@
 mod commands;
+pub mod lsp;
 pub mod mcp;
 pub mod state;
 
@@ -8,12 +9,16 @@ pub fn run() {
     let app_state = Arc::new(state::AppState::new());
     let mcp_state = app_state.clone();
     let term_state = Arc::new(commands::terminal::TerminalState::new());
+    let watcher_state = commands::watcher::WatcherState::new();
+    let lsp_state = commands::lsp::LspState::new();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(app_state)
         .manage(term_state)
+        .manage(watcher_state)
+        .manage(lsp_state)
         .invoke_handler(tauri::generate_handler![
             // Project commands
             commands::project::open_project,
@@ -44,6 +49,10 @@ pub fn run() {
             commands::filesystem::git_unstage,
             commands::filesystem::git_discard,
             commands::filesystem::git_commit,
+            commands::filesystem::git_show_file,
+            commands::filesystem::git_blame_file,
+            commands::filesystem::git_push,
+            commands::filesystem::git_pull,
             commands::filesystem::replace_in_files,
             commands::filesystem::search_files_advanced,
             commands::filesystem::copy_file_to,
@@ -69,6 +78,28 @@ pub fn run() {
             commands::ai::ai_get_config,
             commands::ai::ai_update_editor_state,
             commands::ai::ai_get_pending_actions,
+            // LSP commands
+            commands::lsp::lsp_start,
+            commands::lsp::lsp_stop,
+            commands::lsp::lsp_status,
+            commands::lsp::lsp_did_open,
+            commands::lsp::lsp_did_change,
+            commands::lsp::lsp_did_close,
+            commands::lsp::lsp_did_save,
+            commands::lsp::lsp_completion,
+            commands::lsp::lsp_hover,
+            commands::lsp::lsp_definition,
+            commands::lsp::lsp_references,
+            commands::lsp::lsp_rename,
+            commands::lsp::lsp_prepare_rename,
+            commands::lsp::lsp_code_actions,
+            commands::lsp::lsp_document_symbols,
+            commands::lsp::lsp_signature_help,
+            commands::lsp::lsp_workspace_symbols,
+            // File watcher commands
+            commands::watcher::watch_file,
+            commands::watcher::unwatch_file,
+            commands::watcher::unwatch_all,
         ])
         .setup(move |_app| {
             // Spawn MCP server on background task (only if ALLOY_MCP env var is set)

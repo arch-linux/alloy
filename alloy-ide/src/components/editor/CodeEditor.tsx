@@ -10,8 +10,19 @@ import { markdown } from "@codemirror/lang-markdown";
 import { css } from "@codemirror/lang-css";
 import { html } from "@codemirror/lang-html";
 import { javascript } from "@codemirror/lang-javascript";
-import { indentWithTab } from "@codemirror/commands";
+import { indentWithTab, indentMore, indentLess, toggleComment } from "@codemirror/commands";
+import { selectNextOccurrence } from "@codemirror/search";
 import { alloyTheme, alloyHighlight } from "./alloyTheme";
+import { indentGuides } from "./indentGuides";
+import { environmentLint } from "./environmentLint";
+import { gitGutter } from "./gitGutter";
+import { bracketColors } from "./bracketColors";
+import { stickyScroll } from "./stickyScroll";
+import { alloySnippets } from "./alloySnippets";
+import { foldRegions } from "./foldRegions";
+import { gitBlame } from "./gitBlame";
+import { lspExtension, setupLspDiagnostics } from "./lspExtension";
+import { lspDidOpen } from "../../lib/lsp";
 import Minimap from "./Minimap";
 import { useStore } from "../../lib/store";
 import type { CursorPosition } from "../../lib/types";
@@ -45,9 +56,13 @@ function getLanguageExtension(lang: string) {
       return javascript();
     case "typescript":
       return javascript({ typescript: true, jsx: true });
+    case "kotlin":
+      return javascript({ typescript: true }); // Close enough for .kts/.kt highlighting
     case "toml":
       return [];
     case "properties":
+      return [];
+    case "shell":
       return [];
     default:
       return [];
@@ -65,6 +80,7 @@ export default function CodeEditor({
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView>(null);
   const editorSettings = useStore((s) => s.editorSettings);
+  const currentProject = useStore((s) => s.currentProject);
   const [visibleRange, setVisibleRange] = useState({ start: 1, end: 50 });
 
   useEffect(() => {
@@ -79,10 +95,12 @@ export default function CodeEditor({
         const pos = sel.head;
         const line = update.state.doc.lineAt(pos);
         const selected = Math.abs(sel.to - sel.from);
+        const cursorCount = update.state.selection.ranges.length;
         onCursorChange({
           line: line.number,
           column: pos - line.from + 1,
           selected: selected > 0 ? selected : undefined,
+          cursors: cursorCount > 1 ? cursorCount : undefined,
         });
       }
       // Update visible range for minimap
@@ -102,6 +120,10 @@ export default function CodeEditor({
           return true;
         },
       },
+      { key: "Mod-]", run: indentMore },
+      { key: "Mod-[", run: indentLess },
+      { key: "Mod-d", run: selectNextOccurrence },
+      { key: "Mod-/", run: toggleComment },
     ]);
 
     const fontTheme = EditorView.theme({
@@ -119,6 +141,21 @@ export default function CodeEditor({
       saveKeymap,
       updateListener,
       EditorState.tabSize.of(editorSettings.tabSize),
+      ...(editorSettings.indentGuides ? [indentGuides(editorSettings.tabSize)] : []),
+      // Environment linting for Java files
+      ...(language === "java" && currentProject?.environment
+        ? [environmentLint(currentProject.environment)]
+        : []),
+      // Git gutter markers
+      gitGutter(path, currentProject?.path ?? null),
+      // Rainbow bracket colorization
+      bracketColors(),
+      // Sticky scroll, snippets, and fold regions for Java files
+      ...(language === "java" ? [stickyScroll(), alloySnippets(), foldRegions()] : []),
+      // Git blame annotations
+      gitBlame(path, currentProject?.path ?? null),
+      // LSP integration for Java files
+      ...(language === "java" ? [lspExtension(path)] : []),
     ];
 
     if (editorSettings.wordWrap) {
@@ -142,11 +179,21 @@ export default function CodeEditor({
     const endLine = view.state.doc.lineAt(view.viewport.to).number;
     setVisibleRange({ start: startLine, end: endLine });
 
+    // LSP lifecycle for Java files
+    let cleanupLsp: (() => void) | undefined;
+    if (language === "java") {
+      // Notify LSP about the opened file
+      lspDidOpen(path, "java", content).catch(() => {});
+      // Set up diagnostics listener
+      cleanupLsp = setupLspDiagnostics(path, () => viewRef.current);
+    }
+
     return () => {
+      if (cleanupLsp) cleanupLsp();
       view.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, editorSettings.fontSize, editorSettings.tabSize, editorSettings.wordWrap]);
+  }, [path, editorSettings.fontSize, editorSettings.tabSize, editorSettings.wordWrap, editorSettings.indentGuides]);
 
   // Handle go-to-line requests
   const pendingGoToLine = useStore((s) => s.pendingGoToLine);

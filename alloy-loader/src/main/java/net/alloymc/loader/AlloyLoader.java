@@ -90,6 +90,8 @@ public final class AlloyLoader {
         if ("client".equalsIgnoreCase(envProp)) {
             environment = LaunchEnvironment.CLIENT;
         }
+        // Publish the detected environment so AlloyTransformer can check it
+        System.setProperty("alloy.environment", environment.name().toLowerCase());
 
         System.out.println();
         System.out.println("[Alloy] ========================================");
@@ -180,6 +182,8 @@ public final class AlloyLoader {
 
         // Detect launch environment
         LaunchEnvironment environment = detectLaunchEnvironment(args);
+        // Publish so AlloyTransformer can check it
+        System.setProperty("alloy.environment", environment.name().toLowerCase());
 
         System.out.println();
         System.out.println("[Alloy] ========================================");

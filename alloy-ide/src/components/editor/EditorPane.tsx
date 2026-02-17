@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
-import { Eye, Code } from "lucide-react";
+import { Eye, Code, ServerOff } from "lucide-react";
 import { useStore } from "../../lib/store";
+import { isVisualEditorAvailable, getVisualEditorUnavailableReason } from "../../lib/environment";
 import CodeEditor from "./CodeEditor";
 import EditorContextMenu from "./EditorContextMenu";
 import ImagePreview from "./ImagePreview";
@@ -31,6 +32,10 @@ export default function EditorPane() {
   const saveFile = useStore((s) => s.saveFile);
   const sendMessage = useStore((s) => s.sendMessage);
   const setSidebarPanel = useStore((s) => s.setSidebarPanel);
+  const currentProject = useStore((s) => s.currentProject);
+  const openToSide = useStore((s) => s.openToSide);
+  const updateEditorSettings = useStore((s) => s.updateEditorSettings);
+  const editorSettings = useStore((s) => s.editorSettings);
 
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -79,6 +84,15 @@ export default function EditorPane() {
 
   // GUI visual editor
   if (isGui) {
+    const envAvailable = isVisualEditorAvailable(currentProject?.environment ?? null);
+    if (!envAvailable) {
+      return (
+        <VisualEditorBlocked
+          reason={getVisualEditorUnavailableReason(currentProject?.environment ?? null)}
+          fileName={file.name}
+        />
+      );
+    }
     return (
       <GuiEditor
         key={file.path}
@@ -94,6 +108,15 @@ export default function EditorPane() {
 
   // Animation timeline editor
   if (isAnim) {
+    const envAvailable = isVisualEditorAvailable(currentProject?.environment ?? null);
+    if (!envAvailable) {
+      return (
+        <VisualEditorBlocked
+          reason={getVisualEditorUnavailableReason(currentProject?.environment ?? null)}
+          fileName={file.name}
+        />
+      );
+    }
     return (
       <AnimationEditor
         key={file.path}
@@ -160,6 +183,8 @@ export default function EditorPane() {
                 selectedText={contextMenu.selectedText}
                 onClose={() => setContextMenu(null)}
                 onAiAction={handleAiAction}
+                onSplitRight={() => { if (activeFilePath) openToSide(activeFilePath, "horizontal"); }}
+                onToggleWordWrap={() => updateEditorSettings({ wordWrap: !editorSettings.wordWrap })}
               />
             )}
           </div>
@@ -189,6 +214,32 @@ export default function EditorPane() {
           onAiAction={handleAiAction}
         />
       )}
+    </div>
+  );
+}
+
+/** Shown when visual editors are blocked due to environment */
+function VisualEditorBlocked({
+  reason,
+  fileName,
+}: {
+  reason: string | null;
+  fileName: string;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
+      <ServerOff size={48} className="text-stone-600" />
+      <div className="text-center max-w-sm">
+        <h3 className="text-sm font-medium text-stone-300 mb-2">
+          Visual Editor Unavailable
+        </h3>
+        <p className="text-xs text-stone-500 leading-relaxed">
+          {reason || `Cannot open visual editor for "${fileName}" in this environment.`}
+        </p>
+        <p className="text-xs text-stone-600 mt-3">
+          Change the mod environment to "client" or "both" in alloy.mod.json to enable visual editors.
+        </p>
+      </div>
     </div>
   );
 }

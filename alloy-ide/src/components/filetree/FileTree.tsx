@@ -1,9 +1,29 @@
-import { useState, useCallback } from "react";
-import { FolderOpen, RefreshCw, Upload } from "lucide-react";
+import { useState, useCallback, useMemo } from "react";
+import { FolderOpen, RefreshCw, Upload, Search, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useStore } from "../../lib/store";
 import { showToast } from "../ui/Toast";
 import FileTreeNode from "./FileTreeNode";
+import type { FileEntry } from "../../lib/types";
+
+/** Recursively filter the tree to entries matching the query. */
+function filterTree(entries: FileEntry[], query: string): FileEntry[] {
+  const q = query.toLowerCase();
+  const result: FileEntry[] = [];
+
+  for (const entry of entries) {
+    if (entry.is_dir && entry.children) {
+      const filteredChildren = filterTree(entry.children, query);
+      if (filteredChildren.length > 0) {
+        result.push({ ...entry, children: filteredChildren, expanded: true });
+      }
+    } else if (entry.name.toLowerCase().includes(q)) {
+      result.push(entry);
+    }
+  }
+
+  return result;
+}
 
 export default function FileTree() {
   const fileTree = useStore((s) => s.fileTree);
@@ -11,6 +31,8 @@ export default function FileTree() {
   const openFolderDialog = useStore((s) => s.openFolderDialog);
   const openProject = useStore((s) => s.openProject);
   const [dragOver, setDragOver] = useState(false);
+  const [filter, setFilter] = useState("");
+  const [filterVisible, setFilterVisible] = useState(false);
 
   const handleRefresh = () => {
     if (currentProject) {
@@ -65,6 +87,11 @@ export default function FileTree() {
     [currentProject],
   );
 
+  const displayTree = useMemo(() => {
+    if (!filter.trim()) return fileTree;
+    return filterTree(fileTree, filter.trim());
+  }, [fileTree, filter]);
+
   if (fileTree.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-32 gap-3 text-stone-500 text-xs px-4 text-center">
@@ -95,6 +122,21 @@ export default function FileTree() {
       {/* Action buttons */}
       <div className="flex items-center justify-end gap-0.5 px-2 py-1 shrink-0">
         <button
+          onClick={() => {
+            setFilterVisible((v) => !v);
+            if (filterVisible) setFilter("");
+          }}
+          className={
+            "p-1 rounded transition-colors " +
+            (filterVisible
+              ? "text-ember bg-ember/10"
+              : "text-stone-500 hover:text-stone-300 hover:bg-obsidian-800")
+          }
+          title="Filter files"
+        >
+          <Search size={13} />
+        </button>
+        <button
           onClick={handleRefresh}
           className="p-1 rounded text-stone-500 hover:text-stone-300 hover:bg-obsidian-800 transition-colors"
           title="Refresh"
@@ -102,12 +144,50 @@ export default function FileTree() {
           <RefreshCw size={13} />
         </button>
       </div>
+
+      {/* Filter input */}
+      {filterVisible && (
+        <div className="flex items-center gap-1.5 px-2 pb-1.5 shrink-0">
+          <div className="flex items-center flex-1 gap-1 bg-obsidian-950 border border-obsidian-600 rounded px-2 py-0.5">
+            <Search size={11} className="text-stone-600 shrink-0" />
+            <input
+              autoFocus
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Filter files..."
+              className="flex-1 bg-transparent text-[11px] text-stone-200 placeholder:text-stone-600 outline-none"
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  setFilter("");
+                  setFilterVisible(false);
+                }
+              }}
+            />
+            {filter && (
+              <button
+                onClick={() => setFilter("")}
+                className="text-stone-600 hover:text-stone-300"
+              >
+                <X size={10} />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Tree */}
       <div className="flex-1 overflow-y-auto scrollbar-thin py-0.5">
-        {fileTree.map((entry) => (
-          <FileTreeNode key={entry.path} entry={entry} depth={0} />
-        ))}
+        {displayTree.length === 0 && filter ? (
+          <div className="px-3 py-4 text-center text-[11px] text-stone-600">
+            No matches for "{filter}"
+          </div>
+        ) : (
+          displayTree.map((entry) => (
+            <FileTreeNode key={entry.path} entry={entry} depth={0} />
+          ))
+        )}
       </div>
+
       {/* Drop indicator */}
       {dragOver && (
         <div className="flex items-center justify-center gap-1.5 py-2 text-[11px] text-ember border-t border-ember/30 bg-ember/5">

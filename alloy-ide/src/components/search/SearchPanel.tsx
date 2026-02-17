@@ -122,8 +122,13 @@ export default function SearchPanel() {
     setReplacing(false);
   };
 
-  const handleResultClick = (path: string, name: string) => {
-    openFile(path, name);
+  const goToLine = useStore((s) => s.goToLine);
+
+  const handleResultClick = async (path: string, name: string, lineNumber?: number) => {
+    await openFile(path, name);
+    if (lineNumber) {
+      setTimeout(() => goToLine(lineNumber), 50);
+    }
   };
 
   // Group results by file
@@ -243,7 +248,7 @@ export default function SearchPanel() {
             filePath={filePath}
             name={name}
             results={results}
-            onResultClick={handleResultClick}
+            onResultClick={(path, name, line) => handleResultClick(path, name, line)}
             searchQuery={searchValue}
           />
         ))}
@@ -269,7 +274,7 @@ function FileResultGroup({
   filePath: string;
   name: string;
   results: SearchResult[];
-  onResultClick: (path: string, name: string) => void;
+  onResultClick: (path: string, name: string, lineNumber: number) => void;
   searchQuery: string;
 }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -291,7 +296,7 @@ function FileResultGroup({
         results.map((r, i) => (
           <button
             key={`${r.path}:${r.line_number}:${i}`}
-            onClick={() => onResultClick(r.path, r.name)}
+            onClick={() => onResultClick(r.path, r.name, r.line_number)}
             className="flex w-full items-start gap-2 px-3 py-1 pl-7 text-xs hover:bg-obsidian-800 transition-colors text-left"
           >
             <span className="text-stone-500 shrink-0 w-8 text-right tabular-nums">

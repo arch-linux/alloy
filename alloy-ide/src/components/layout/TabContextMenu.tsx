@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { X, XCircle, Files, Copy, FolderOpen, Columns2, Rows2 } from "lucide-react";
+import { X, XCircle, Files, Copy, FolderOpen, Columns2, Rows2, Pin, PinOff } from "lucide-react";
 import { useStore } from "../../lib/store";
 import { showToast } from "../ui/Toast";
 
@@ -95,7 +95,17 @@ export default function TabContextMenu({ x, y, filePath, onClose }: TabContextMe
     onClose();
   };
 
+  const togglePin = () => {
+    useStore.getState().pinFile(filePath);
+    onClose();
+  };
+
+  const file = useStore.getState().openFiles.find((f) => f.path === filePath);
+  const isPinned = file?.pinned;
+
   const items = [
+    { label: isPinned ? "Unpin Tab" : "Pin Tab", icon: isPinned ? <PinOff size={13} /> : <Pin size={13} className="-rotate-45" />, action: togglePin, shortcut: undefined },
+    { label: "---", icon: null, action: () => {}, shortcut: undefined },
     { label: "Close", icon: <X size={13} />, action: close, shortcut: undefined },
     { label: "Close Others", icon: <XCircle size={13} />, action: closeOthers, shortcut: undefined },
     { label: "Close All", icon: <XCircle size={13} />, action: closeAll, shortcut: undefined },

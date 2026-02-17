@@ -1,7 +1,9 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { ChevronRight, ChevronDown, FilePlus, FolderPlus, Trash2, Pencil, Copy } from "lucide-react";
+import { ChevronRight, ChevronDown, FilePlus, FolderPlus, Trash2, Pencil, Copy, Sparkles } from "lucide-react";
 import { useStore } from "../../lib/store";
 import { showToast } from "../ui/Toast";
+import { ALLOY_TEMPLATES, getPackageForPath } from "../../lib/templates";
+import { filterTemplatesForEnvironment } from "../../lib/environment";
 import FileIcon from "./FileIcon";
 import type { FileEntry } from "../../lib/types";
 
@@ -20,6 +22,7 @@ export default function FileTreeNode({ entry, depth }: FileTreeNodeProps) {
   const deletePath = useStore((s) => s.deletePath);
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [showTemplates, setShowTemplates] = useState(false);
   const [newItemMode, setNewItemMode] = useState<"file" | "folder" | null>(null);
   const [newItemName, setNewItemName] = useState("");
   const [renaming, setRenaming] = useState(false);
@@ -68,6 +71,39 @@ export default function FileTreeNode({ entry, depth }: FileTreeNodeProps) {
       toggleDirectory(entry.path);
     }
   }, [entry, toggleDirectory]);
+
+  const handleCreateFromTemplate = useCallback(
+    async (templateId: string) => {
+      setContextMenu(null);
+      setShowTemplates(false);
+      const template = ALLOY_TEMPLATES.find((t) => t.id === templateId);
+      if (!template) return;
+
+      const dirPath = entry.is_dir
+        ? entry.path
+        : entry.path.substring(0, entry.path.lastIndexOf("/"));
+
+      const fileName = prompt("File name:", template.defaultName);
+      if (!fileName) return;
+
+      const fullPath = `${dirPath}/${fileName}`;
+      const className = fileName.replace(/\.(java|json)$/, "").replace(/\.[^.]+$/, "");
+      const packageName = getPackageForPath(dirPath);
+      const content = template.generate(className, packageName);
+
+      try {
+        await createFile(fullPath, content);
+        openFile(fullPath, fileName);
+        // Expand directory if collapsed
+        if (entry.is_dir && !entry.expanded) {
+          toggleDirectory(entry.path);
+        }
+      } catch (e) {
+        showToast("error", `Failed to create file: ${e}`);
+      }
+    },
+    [entry, createFile, openFile, toggleDirectory],
+  );
 
   const handleDelete = useCallback(() => {
     setContextMenu(null);
@@ -145,6 +181,12 @@ export default function FileTreeNode({ entry, depth }: FileTreeNodeProps) {
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
         onContextMenu={handleContextMenu}
+        draggable={!entry.is_dir}
+        onDragStart={(e) => {
+          if (entry.is_dir) { e.preventDefault(); return; }
+          e.dataTransfer.setData("text/plain", entry.path);
+          e.dataTransfer.effectAllowed = "copy";
+        }}
         className={
           "flex items-center h-[26px] cursor-pointer text-xs transition-colors " +
           (isActive
@@ -242,6 +284,46 @@ export default function FileTreeNode({ entry, depth }: FileTreeNodeProps) {
                 <FolderPlus size={13} className="text-stone-400" />
                 New Folder
               </button>
+              {/* Alloy templates submenu */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowTemplates(!showTemplates)}
+                  onMouseEnter={() => setShowTemplates(true)}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-ember hover:bg-ember/10 transition-colors"
+                >
+                  <Sparkles size={13} />
+                  New Alloy File
+                  <ChevronRight size={11} className="ml-auto text-stone-500" />
+                </button>
+                {showTemplates && (
+                  <div
+                    className="absolute left-full top-0 z-50 min-w-[200px] rounded-md border border-obsidian-600 bg-obsidian-800 py-1 shadow-xl ml-0.5"
+                    onMouseLeave={() => setShowTemplates(false)}
+                  >
+                    {ALLOY_TEMPLATES
+                      .filter((tmpl) => {
+                        const env = useStore.getState().currentProject?.environment ?? null;
+                        const allowed = filterTemplatesForEnvironment(
+                          ALLOY_TEMPLATES.map((t) => t.id),
+                          env,
+                        );
+                        return allowed.includes(tmpl.id);
+                      })
+                      .map((tmpl) => (
+                      <button
+                        key={tmpl.id}
+                        onClick={() => handleCreateFromTemplate(tmpl.id)}
+                        className="flex w-full items-start gap-2 px-3 py-1.5 text-[12px] text-stone-200 hover:bg-obsidian-700 hover:text-stone-100 transition-colors"
+                      >
+                        <div className="flex flex-col items-start">
+                          <span>{tmpl.label}</span>
+                          <span className="text-[10px] text-stone-500">{tmpl.description}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <div className="my-1 border-t border-obsidian-600" />
             </>
           )}

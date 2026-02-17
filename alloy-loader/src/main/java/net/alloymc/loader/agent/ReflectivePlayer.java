@@ -376,7 +376,6 @@ public final class ReflectivePlayer implements Player {
                 Field blockField = registriesClass.getDeclaredField("e");
                 blockField.setAccessible(true);
                 cachedBlockRegistry = blockField.get(null);
-                System.out.println("[Alloy] sendBlockChange: registry resolved = " + cachedBlockRegistry.getClass().getName());
             }
             Object blockRegistry = cachedBlockRegistry;
 
@@ -401,11 +400,11 @@ public final class ReflectivePlayer implements Player {
                     if (mcBlock != null) break;
                 }
             }
-            if (mcBlock == null) { System.err.println("[Alloy] sendBlockChange: block lookup FAILED for " + mcName); return; }
+            if (mcBlock == null) return;
 
             // 5. Block.defaultBlockState() -> m()
             Object blockState = EventFiringHook.invokeNoArgs(mcBlock, "m");
-            if (blockState == null) { System.err.println("[Alloy] sendBlockChange: defaultBlockState FAILED"); return; }
+            if (blockState == null) return;
 
             // 6. Create ClientboundBlockUpdatePacket (adj)
             if (cachedPacketClass == null) {
@@ -421,25 +420,20 @@ public final class ReflectivePlayer implements Player {
                     break;
                 }
             }
-            if (packet == null) { System.err.println("[Alloy] sendBlockChange: packet ctor FAILED"); return; }
+            if (packet == null) return;
 
             // 7. Send via ServerPlayer.connection(g).send(b)
             Object connection = EventFiringHook.getField(handle, "g");
-            if (connection == null) { System.err.println("[Alloy] sendBlockChange: connection null"); return; }
+            if (connection == null) return;
 
             for (Method m : connection.getClass().getMethods()) {
                 if (m.getName().equals("b") && m.getParameterCount() == 1
                         && m.getParameterTypes()[0].isInstance(packet)) {
                     m.invoke(connection, packet);
-                    System.out.println("[Alloy] sendBlockChange OK: " + material + " at " + bx + "," + by + "," + bz);
                     return;
                 }
             }
-            System.err.println("[Alloy] sendBlockChange: no send method found on " + connection.getClass().getName());
-        } catch (Exception e) {
-            System.err.println("[Alloy] sendBlockChange EXCEPTION: " + e.getMessage());
-            e.printStackTrace();
-        }
+        } catch (Exception ignored) {}
     }
 
     @Override

@@ -1,6 +1,6 @@
 import {
   Folder, FolderOpen, File, FileCode, FileJson, FileText, Image,
-  FileType, Settings, Shield, Lock, Hash
+  FileType, Settings, Shield, Lock, Hash, Package, Database, Cpu
 } from "lucide-react";
 
 interface FileIconProps {
@@ -50,6 +50,12 @@ export default function FileIcon({ isDir, extension, expanded, name }: FileIconP
   }
   if (lowerName.includes("license") || lowerName.includes("licence")) {
     return <Lock size={14} className="text-stone-400 shrink-0" />;
+  }
+  if (lowerName === "dockerfile" || lowerName === "docker-compose.yml") {
+    return <Package size={14} className="text-blue-400 shrink-0" />;
+  }
+  if (lowerName === "makefile" || lowerName === "cmakelists.txt") {
+    return <Cpu size={14} className="text-green-400 shrink-0" />;
   }
 
   switch (extension) {
@@ -104,12 +110,37 @@ export default function FileIcon({ isDir, extension, expanded, name }: FileIconP
     case "ico":
     case "webp":
       return <Image size={14} className="text-purple-400 shrink-0" />;
+    // JVM/Java
+    case "jar":
+    case "class":
+      return <Package size={14} className="text-orange-400 shrink-0" />;
+    case "kt":
+      return <FileCode size={14} className="text-purple-400 shrink-0" />;
+    // Database/data
+    case "sql":
+    case "db":
+    case "sqlite":
+      return <Database size={14} className="text-blue-300 shrink-0" />;
+    case "csv":
+      return <FileText size={14} className="text-green-300 shrink-0" />;
     // Docs
     case "md":
       return <FileText size={14} className="text-blue-400 shrink-0" />;
     case "txt":
     case "log":
       return <FileText size={14} className="text-stone-400 shrink-0" />;
+    // Config
+    case "cfg":
+    case "ini":
+    case "conf":
+    case "env":
+      return <Settings size={14} className="text-stone-400 shrink-0" />;
+    // Binary/compiled
+    case "wasm":
+    case "so":
+    case "dll":
+    case "dylib":
+      return <Cpu size={14} className="text-red-400 shrink-0" />;
     default:
       return <File size={14} className="text-stone-500 shrink-0" />;
   }

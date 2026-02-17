@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from "react";
 import { Trash2, ChevronDown, ChevronRight } from "lucide-react";
 import type { AnimationProject, AnimationTrack, Keyframe, AnimPropertyType, EasingType } from "../../lib/types";
+import EasingEditor from "./EasingEditor";
 
 const PROPERTY_LABELS: Record<AnimPropertyType, string> = {
   uv_offset_x: "UV Offset X",
@@ -281,54 +282,64 @@ export default function Timeline({
         if (!track || !kf) return null;
 
         return (
-          <div className="flex items-center gap-3 px-3 py-1.5 border-t border-obsidian-700 bg-obsidian-800/50 shrink-0">
-            <span className="text-[9px] text-stone-500 uppercase">Keyframe</span>
-            <div className="flex items-center gap-1">
-              <span className="text-[9px] text-stone-600">Tick:</span>
-              <input
-                type="number"
-                value={kf.tick}
-                onChange={(e) => {
-                  const newTick = Math.max(0, Math.min(project.duration_ticks - 1, +e.target.value));
-                  onDeleteKeyframe(track.id, kf.tick);
-                  onAddKeyframe(track.id, newTick, kf.value);
-                  setSelectedKeyframe({ trackId: track.id, tick: newTick });
-                }}
-                className="prop-input w-14"
-              />
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="text-[9px] text-stone-600">Value:</span>
-              <input
-                type="number"
-                step="0.1"
-                value={kf.value}
-                onChange={(e) => onUpdateKeyframe(track.id, kf.tick, { value: +e.target.value })}
-                className="prop-input w-16"
-              />
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="text-[9px] text-stone-600">Easing:</span>
-              <select
-                value={kf.easing}
-                onChange={(e) => onUpdateKeyframe(track.id, kf.tick, { easing: e.target.value as EasingType })}
-                className="prop-input w-24"
+          <>
+            <div className="flex items-center gap-3 px-3 py-1.5 border-t border-obsidian-700 bg-obsidian-800/50 shrink-0">
+              <span className="text-[9px] text-stone-500 uppercase">Keyframe</span>
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] text-stone-600">Tick:</span>
+                <input
+                  type="number"
+                  value={kf.tick}
+                  onChange={(e) => {
+                    const newTick = Math.max(0, Math.min(project.duration_ticks - 1, +e.target.value));
+                    onDeleteKeyframe(track.id, kf.tick);
+                    onAddKeyframe(track.id, newTick, kf.value);
+                    setSelectedKeyframe({ trackId: track.id, tick: newTick });
+                  }}
+                  className="prop-input w-14"
+                />
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] text-stone-600">Value:</span>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={kf.value}
+                  onChange={(e) => onUpdateKeyframe(track.id, kf.tick, { value: +e.target.value })}
+                  className="prop-input w-16"
+                />
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] text-stone-600">Easing:</span>
+                <select
+                  value={kf.easing}
+                  onChange={(e) => onUpdateKeyframe(track.id, kf.tick, { easing: e.target.value as EasingType })}
+                  className="prop-input w-24"
+                >
+                  <option value="linear">Linear</option>
+                  <option value="ease-in">Ease In</option>
+                  <option value="ease-out">Ease Out</option>
+                  <option value="ease-in-out">Ease In/Out</option>
+                  <option value="cubic-bezier">Cubic Bezier</option>
+                </select>
+              </div>
+              <button
+                onClick={() => { onDeleteKeyframe(track.id, kf.tick); setSelectedKeyframe(null); }}
+                className="p-1 rounded text-stone-600 hover:text-molten hover:bg-molten/10 transition-colors cursor-pointer ml-auto"
+                title="Delete keyframe"
               >
-                <option value="linear">Linear</option>
-                <option value="ease-in">Ease In</option>
-                <option value="ease-out">Ease Out</option>
-                <option value="ease-in-out">Ease In/Out</option>
-                <option value="cubic-bezier">Cubic Bezier</option>
-              </select>
+                <Trash2 size={11} />
+              </button>
             </div>
-            <button
-              onClick={() => { onDeleteKeyframe(track.id, kf.tick); setSelectedKeyframe(null); }}
-              className="p-1 rounded text-stone-600 hover:text-molten hover:bg-molten/10 transition-colors cursor-pointer ml-auto"
-              title="Delete keyframe"
-            >
-              <Trash2 size={11} />
-            </button>
-          </div>
+            {kf.easing === "cubic-bezier" && (
+              <div className="px-3 py-2 border-t border-obsidian-700/50 bg-obsidian-800/30">
+                <EasingEditor
+                  handles={kf.bezier_handles || [0.42, 0, 0.58, 1]}
+                  onChange={(handles) => onUpdateKeyframe(track.id, kf.tick, { bezier_handles: handles })}
+                />
+              </div>
+            )}
+          </>
         );
       })()}
     </div>

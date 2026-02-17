@@ -510,6 +510,9 @@ pub async fn get_file_size(path: String) -> Result<u64, String> {
 pub struct GitStatus {
     pub branch: String,
     pub files: Vec<GitFileStatus>,
+    pub staged: Vec<GitFileStatus>,
+    pub ahead: u32,
+    pub behind: u32,
 }
 
 #[derive(Debug, Serialize)]
@@ -535,7 +538,23 @@ pub async fn git_status(project_path: String) -> Result<GitStatus, String> {
         return Err("Not a git repository".to_string());
     }
 
-    // Get file statuses
+    // Get ahead/behind counts
+    let mut ahead: u32 = 0;
+    let mut behind: u32 = 0;
+    if let Ok(ab_output) = std::process::Command::new("git")
+        .args(["rev-list", "--left-right", "--count", &format!("HEAD...@{{u}}")])
+        .current_dir(&project_path)
+        .output()
+    {
+        let ab_text = String::from_utf8_lossy(&ab_output.stdout);
+        let parts: Vec<&str> = ab_text.trim().split('\t').collect();
+        if parts.len() == 2 {
+            ahead = parts[0].parse().unwrap_or(0);
+            behind = parts[1].parse().unwrap_or(0);
+        }
+    }
+
+    // Get file statuses with porcelain v1 (XY format)
     let status_output = std::process::Command::new("git")
         .args(["status", "--porcelain=v1"])
         .current_dir(&project_path)
@@ -543,29 +562,95 @@ pub async fn git_status(project_path: String) -> Result<GitStatus, String> {
         .map_err(|e| e.to_string())?;
 
     let status_text = String::from_utf8_lossy(&status_output.stdout);
-    let files: Vec<GitFileStatus> = status_text
-        .lines()
-        .filter(|l| !l.is_empty())
-        .map(|line| {
-            let status_code = line.get(0..2).unwrap_or("??").trim().to_string();
-            let file_path = line.get(3..).unwrap_or("").to_string();
-            let status = match status_code.as_str() {
-                "M" | " M" => "modified",
-                "A" | " A" => "added",
-                "D" | " D" => "deleted",
-                "R" => "renamed",
-                "??" => "untracked",
-                _ => "changed",
-            }
-            .to_string();
-            GitFileStatus {
-                path: file_path,
-                status,
-            }
-        })
-        .collect();
+    let mut files: Vec<GitFileStatus> = Vec::new();
+    let mut staged: Vec<GitFileStatus> = Vec::new();
 
-    Ok(GitStatus { branch, files })
+    for line in status_text.lines().filter(|l| !l.is_empty()) {
+        let x = line.chars().next().unwrap_or(' ');
+        let y = line.chars().nth(1).unwrap_or(' ');
+        let file_path = line.get(3..).unwrap_or("").to_string();
+
+        // Index (staged) status - first char
+        if x != ' ' && x != '?' {
+            let status = match x {
+                'M' => "modified",
+                'A' => "added",
+                'D' => "deleted",
+                'R' => "renamed",
+                'C' => "copied",
+                _ => "changed",
+            };
+            staged.push(GitFileStatus {
+                path: file_path.clone(),
+                status: status.to_string(),
+            });
+        }
+
+        // Working tree (unstaged) status - second char
+        if y != ' ' {
+            let status = match y {
+                'M' => "modified",
+                'D' => "deleted",
+                '?' => "untracked",
+                _ => "changed",
+            };
+            files.push(GitFileStatus {
+                path: file_path,
+                status: status.to_string(),
+            });
+        } else if x == '?' {
+            // ?? = untracked
+            files.push(GitFileStatus {
+                path: file_path,
+                status: "untracked".to_string(),
+            });
+        }
+    }
+
+    Ok(GitStatus { branch, files, staged, ahead, behind })
+}
+
+#[tauri::command]
+pub async fn git_show_file(project_path: String, file_path: String) -> Result<String, String> {
+    let output = std::process::Command::new("git")
+        .args(["show", &format!("HEAD:{}", file_path)])
+        .current_dir(&project_path)
+        .output()
+        .map_err(|e| format!("git show failed: {}", e))?;
+
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+#[tauri::command]
+pub async fn git_push(project_path: String) -> Result<String, String> {
+    let output = std::process::Command::new("git")
+        .args(["push"])
+        .current_dir(&project_path)
+        .output()
+        .map_err(|e| format!("git push failed: {}", e))?;
+
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string()
+        + &String::from_utf8_lossy(&output.stderr))
+}
+
+#[tauri::command]
+pub async fn git_pull(project_path: String) -> Result<String, String> {
+    let output = std::process::Command::new("git")
+        .args(["pull"])
+        .current_dir(&project_path)
+        .output()
+        .map_err(|e| format!("git pull failed: {}", e))?;
+
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 #[tauri::command]
@@ -657,4 +742,107 @@ pub async fn git_commit(project_path: String, message: String) -> Result<(), Str
         return Err(stderr);
     }
     Ok(())
+}
+
+#[derive(serde::Serialize)]
+pub struct BlameLine {
+    pub hash: String,
+    pub author: String,
+    pub date: String,
+    pub summary: String,
+}
+
+#[tauri::command]
+pub async fn git_blame_file(
+    project_path: String,
+    file_path: String,
+) -> Result<Vec<BlameLine>, String> {
+    let output = std::process::Command::new("git")
+        .args(["blame", "--porcelain", &file_path])
+        .current_dir(&project_path)
+        .output()
+        .map_err(|e| format!("git blame failed: {}", e))?;
+
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut result: Vec<BlameLine> = Vec::new();
+
+    let mut current_hash = String::new();
+    let mut current_author = String::new();
+    let mut current_date = String::new();
+    let mut current_summary = String::new();
+
+    for line in stdout.lines() {
+        if line.starts_with('\t') {
+            // This is the actual source line — finalize this blame entry
+            result.push(BlameLine {
+                hash: current_hash.clone(),
+                author: current_author.clone(),
+                date: current_date.clone(),
+                summary: current_summary.clone(),
+            });
+        } else if let Some(rest) = line.strip_prefix("author ") {
+            current_author = rest.to_string();
+        } else if let Some(rest) = line.strip_prefix("author-time ") {
+            // Convert Unix timestamp to ISO date
+            if let Ok(ts) = rest.parse::<i64>() {
+                let secs = ts;
+                // Simple UTC date formatting
+                let datetime = chrono_lite_format(secs);
+                current_date = datetime;
+            }
+        } else if let Some(rest) = line.strip_prefix("summary ") {
+            current_summary = rest.to_string();
+        } else if line.len() >= 40 && line.chars().take(40).all(|c| c.is_ascii_hexdigit()) {
+            // This is a commit hash line (40 hex chars followed by line numbers)
+            current_hash = line[..40].to_string();
+        }
+    }
+
+    Ok(result)
+}
+
+/// Simple Unix timestamp to "YYYY-MM-DD" formatting without chrono dependency.
+fn chrono_lite_format(timestamp: i64) -> String {
+    // Calculate date from Unix timestamp (UTC)
+    let secs_per_day: i64 = 86400;
+    let days = timestamp / secs_per_day;
+
+    // Days since 1970-01-01
+    let mut y = 1970i64;
+    let mut remaining = days;
+
+    loop {
+        let days_in_year = if is_leap(y) { 366 } else { 365 };
+        if remaining < days_in_year {
+            break;
+        }
+        remaining -= days_in_year;
+        y += 1;
+    }
+
+    let month_days = if is_leap(y) {
+        [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    } else {
+        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    };
+
+    let mut m = 0usize;
+    for (i, &md) in month_days.iter().enumerate() {
+        if remaining < md {
+            m = i;
+            break;
+        }
+        remaining -= md;
+    }
+
+    let d = remaining + 1;
+    format!("{:04}-{:02}-{:02}", y, m + 1, d)
+}
+
+fn is_leap(y: i64) -> bool {
+    (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
 }

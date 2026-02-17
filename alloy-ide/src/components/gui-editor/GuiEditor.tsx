@@ -19,6 +19,7 @@ import GuiCanvas from "./GuiCanvas";
 import WidgetPalette from "./WidgetPalette";
 import PropertyPanel from "./PropertyPanel";
 import GuiCodePreview from "./GuiCodePreview";
+import GuiPreview from "./GuiPreview";
 
 interface Props {
   path: string;
@@ -53,6 +54,7 @@ export default function GuiEditor({ path, content, onSave }: Props) {
   const [showGrid, setShowGrid] = useState(true);
   const [gridSize, setGridSize] = useState(8);
   const [showCode, setShowCode] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
   const [undoStack, setUndoStack] = useState<GuiProject[]>([]);
   const [redoStack, setRedoStack] = useState<GuiProject[]>([]);
   const dirty = useRef(false);
@@ -204,7 +206,8 @@ export default function GuiEditor({ path, content, onSave }: Props) {
             </>
           )}
           <div className="flex-1" />
-          <ToolbarButton icon={<Code size={13} />} title="Preview Code" active={showCode} onClick={() => setShowCode(!showCode)} />
+          <ToolbarButton icon={<Eye size={13} />} title="MC Preview" active={showPreview} onClick={() => { setShowPreview(!showPreview); setShowCode(false); }} />
+          <ToolbarButton icon={<Code size={13} />} title="Preview Code" active={showCode} onClick={() => { setShowCode(!showCode); setShowPreview(false); }} />
           <ToolbarButton
             icon={<Save size={13} />}
             title="Save"
@@ -215,6 +218,8 @@ export default function GuiEditor({ path, content, onSave }: Props) {
         {/* Canvas area */}
         {showCode ? (
           <GuiCodePreview project={project} modId={modId} />
+        ) : showPreview ? (
+          <GuiPreview project={project} />
         ) : (
           <GuiCanvas
             project={project}

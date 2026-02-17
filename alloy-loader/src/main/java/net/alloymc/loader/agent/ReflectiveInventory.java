@@ -14,7 +14,7 @@ import java.lang.reflect.Method;
  *   getContainerSize() -> b() returns int (36 for player inventory)
  *   getItem(int)       -> a(int) returns ItemStack
  *   setItem(int, IS)   -> a(int, ItemStack) void
- *   clearContent()     -> p() void
+ *   clearContent()     -> a() void (no-arg overload)
  * </pre>
  */
 public final class ReflectiveInventory implements Inventory {
@@ -117,7 +117,16 @@ public final class ReflectiveInventory implements Inventory {
     @Override
     public void clear() {
         try {
-            EventFiringHook.invokeNoArgs(handle, "p"); // clearContent
+            // clearContent() → a() (no-arg void method)
+            // Note: "a" is overloaded on Container — we need the no-arg void one
+            for (java.lang.reflect.Method m : handle.getClass().getMethods()) {
+                if (m.getName().equals("a") && m.getParameterCount() == 0
+                        && m.getReturnType() == void.class) {
+                    m.setAccessible(true);
+                    m.invoke(handle);
+                    return;
+                }
+            }
         } catch (Exception ignored) {}
     }
 }

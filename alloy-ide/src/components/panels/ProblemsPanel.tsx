@@ -16,9 +16,13 @@ export default function ProblemsPanel() {
     );
   };
 
-  const handleClickError = (problem: { file: string; line: number }) => {
+  const goToLine = useStore((s) => s.goToLine);
+
+  const handleClickError = async (problem: { file: string; line: number }) => {
     const name = problem.file.split("/").pop() || problem.file;
-    openFile(problem.file, name);
+    await openFile(problem.file, name);
+    // Jump to the error line after a short delay to let the editor mount
+    setTimeout(() => goToLine(problem.line), 50);
   };
 
   const errors = buildErrors.filter((e) => e.severity === "error");

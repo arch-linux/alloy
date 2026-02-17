@@ -20,6 +20,7 @@ import type {
   BuildResult,
   EditorSettings,
 } from "./types";
+import { lspStart, lspStop } from "./lsp";
 
 function detectLanguage(path: string): string {
   const name = path.split("/").pop()?.toLowerCase() || "";
@@ -29,19 +30,20 @@ function detectLanguage(path: string): string {
   if (name === "alloy.mod.json" || name === "alloy.pack.toml") return "json";
 
   // Multi-part extensions
-  if (name.endsWith(".gradle.kts")) return "java"; // Kotlin DSL — use Java highlighting
+  if (name.endsWith(".gradle.kts")) return "kotlin";
   if (name.endsWith(".d.ts")) return "typescript";
 
   switch (ext) {
     case "java":
+      return "java";
     case "kt":
     case "kts":
-      return "java";
+      return "kotlin";
     case "json":
     case "mcmeta":
       return "json";
     case "gradle":
-      return "java"; // Groovy — close enough to Java
+      return "kotlin"; // Groovy → Kotlin highlighting is close enough
     case "toml":
       return "toml";
     case "md":
@@ -138,11 +140,22 @@ interface IdeStore {
   // Asset import
   assetImportSource: string | null;
 
+  // Diff view
+  diffView: {
+    originalContent: string;
+    modifiedContent: string;
+    originalTitle: string;
+    modifiedTitle: string;
+  } | null;
+
   // AI
   chatMessages: ChatMessage[];
   aiLoading: boolean;
   aiConfig: AiConfig | null;
   aiConfigLoaded: boolean;
+
+  // LSP
+  lspRunning: boolean;
 
   // Actions — Project
   openProject: (path: string) => Promise<void>;
@@ -208,6 +221,8 @@ interface IdeStore {
   // Actions — Asset import
   showAssetImport: (sourcePath: string) => void;
   hideAssetImport: () => void;
+  showDiffView: (original: string, modified: string, originalTitle: string, modifiedTitle: string) => void;
+  closeDiffView: () => void;
 
   // Actions — AI
   sendMessage: (message: string) => Promise<void>;
@@ -245,6 +260,9 @@ export const useStore = create<IdeStore>((set, get) => ({
     wordWrap: true,
     lineNumbers: true,
     minimap: false,
+    indentGuides: true,
+    autoSave: false,
+    autoSaveDelay: 2000,
   },
   settingsOpen: false,
 
@@ -267,17 +285,26 @@ export const useStore = create<IdeStore>((set, get) => ({
   // Asset import
   assetImportSource: null,
 
+  // Diff view
+  diffView: null,
+
   // AI initial state
   chatMessages: [],
   aiLoading: false,
   aiConfig: null,
   aiConfigLoaded: false,
 
+  // LSP initial state
+  lspRunning: false,
+
   openProject: async (path: string) => {
     // Save current workspace state before switching
     const prev = get();
     if (prev.currentProject) {
       await get().saveWorkspaceState();
+      // Stop previous LSP server
+      lspStop().catch(() => {});
+      set({ lspRunning: false });
     }
 
     const info = await invoke<ProjectInfo>("open_project", { path });
@@ -293,6 +320,11 @@ export const useStore = create<IdeStore>((set, get) => ({
 
     // Restore workspace state for the new project
     await get().restoreWorkspaceState(path);
+
+    // Start LSP server for the project (non-blocking)
+    lspStart(path)
+      .then(() => set({ lspRunning: true }))
+      .catch(() => set({ lspRunning: false }));
   },
 
   openFolderDialog: async () => {
@@ -371,14 +403,19 @@ export const useStore = create<IdeStore>((set, get) => ({
       openFiles: updated,
       activeFilePath: path,
     });
+
+    // Watch this file for external changes
+    invoke("watch_file", { path }).catch(() => {});
   },
 
   pinFile: (path: string) => {
-    set({
-      openFiles: get().openFiles.map((f) =>
-        f.path === path ? { ...f, preview: false } : f,
-      ),
-    });
+    const files = get().openFiles.map((f) =>
+      f.path === path ? { ...f, preview: false, pinned: !f.pinned } : f,
+    );
+    // Sort: pinned tabs first, then unpinned (preserve relative order within each group)
+    const pinned = files.filter((f) => f.pinned);
+    const unpinned = files.filter((f) => !f.pinned);
+    set({ openFiles: [...pinned, ...unpinned] });
   },
 
   closeFile: (path: string) => {
@@ -426,6 +463,12 @@ export const useStore = create<IdeStore>((set, get) => ({
           f.path === path ? { ...f, dirty: false } : f,
         ),
       });
+      // Notify LSP about saved file
+      if (file.language === "java" && get().lspRunning) {
+        import("./lsp").then(({ lspDidSave }) => {
+          lspDidSave(path, file.content).catch(() => {});
+        });
+      }
       showToast("success", `Saved ${file.name}`);
     } catch (err) {
       showToast("error", `Failed to save: ${err}`);
@@ -733,6 +776,16 @@ export const useStore = create<IdeStore>((set, get) => ({
     set({ assetImportSource: null });
   },
 
+  showDiffView: (original: string, modified: string, originalTitle: string, modifiedTitle: string) => {
+    set({
+      diffView: { originalContent: original, modifiedContent: modified, originalTitle, modifiedTitle },
+    });
+  },
+
+  closeDiffView: () => {
+    set({ diffView: null });
+  },
+
   // AI actions
 
   sendMessage: async (message: string) => {
@@ -822,12 +875,47 @@ export const useStore = create<IdeStore>((set, get) => ({
   },
 }));
 
-// Set up Tauri event listeners for AI events
+// Set up Tauri event listeners for AI and file watcher events
 let listenersInitialized = false;
 
 export function initAiListeners() {
   if (listenersInitialized) return;
   listenersInitialized = true;
+
+  // File watcher events
+  listen<{ path: string; kind: string }>("file:changed", async (event) => {
+    const { path, kind } = event.payload;
+    const store = useStore.getState();
+    const file = store.openFiles.find((f) => f.path === path);
+    if (!file) return;
+
+    // Don't reload if file has unsaved changes
+    if (file.dirty) {
+      // Mark as externally modified
+      useStore.setState({
+        openFiles: store.openFiles.map((f) =>
+          f.path === path ? { ...f, externallyModified: true } : f,
+        ),
+      });
+      return;
+    }
+
+    // Auto-reload if not dirty
+    if (kind === "modified") {
+      try {
+        const content = await invoke<string>("read_file", { path });
+        if (content !== file.content) {
+          useStore.setState({
+            openFiles: store.openFiles.map((f) =>
+              f.path === path ? { ...f, content } : f,
+            ),
+          });
+        }
+      } catch {
+        // File may have been deleted
+      }
+    }
+  });
 
   listen<{ text: string }>("ai:response-chunk", (event) => {
     // Streaming chunks — update or create the last assistant message

@@ -2,8 +2,10 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import {
   FolderOpen, Search, Terminal, Bot, Files, GitBranch,
   Blocks, PanelBottom, Save, X, RefreshCw, Hammer, Play, Trash2, Settings,
-  RotateCcw, ZoomIn, ZoomOut, Replace,
+  RotateCcw, ZoomIn, ZoomOut, Replace, Columns2, Rows2, Keyboard,
+  ToggleLeft, AlertTriangle, Bug, GitCompareArrows,
 } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
 import { useStore } from "../../lib/store";
 
 interface Command {
@@ -172,6 +174,103 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
       icon: <Replace size={14} />,
       action: () => useStore.getState().setSidebarPanel("search"),
       shortcut: `${mod}+Shift+H`,
+    },
+    {
+      id: "split-right",
+      label: "Split Editor Right",
+      icon: <Columns2 size={14} />,
+      action: () => {
+        const s = useStore.getState();
+        if (s.activeFilePath) s.openToSide(s.activeFilePath, "horizontal");
+      },
+      shortcut: `${mod}+\\`,
+    },
+    {
+      id: "split-down",
+      label: "Split Editor Down",
+      icon: <Rows2 size={14} />,
+      action: () => {
+        const s = useStore.getState();
+        if (s.activeFilePath) s.openToSide(s.activeFilePath, "vertical");
+      },
+    },
+    {
+      id: "close-split",
+      label: "Close Split Editor",
+      icon: <X size={14} />,
+      action: () => useStore.getState().closeSplit(),
+      shortcut: `${mod}+Shift+\\`,
+    },
+    {
+      id: "task-runner",
+      label: "Task Runner",
+      icon: <Play size={14} />,
+      action: () => useStore.getState().setSidebarPanel("tasks"),
+    },
+    {
+      id: "toggle-word-wrap",
+      label: "Toggle Word Wrap",
+      icon: <ToggleLeft size={14} />,
+      action: () => {
+        const s = useStore.getState();
+        s.updateEditorSettings({ wordWrap: !s.editorSettings.wordWrap });
+      },
+    },
+    {
+      id: "toggle-minimap",
+      label: "Toggle Minimap",
+      icon: <ToggleLeft size={14} />,
+      action: () => {
+        const s = useStore.getState();
+        s.updateEditorSettings({ minimap: !s.editorSettings.minimap });
+      },
+    },
+    {
+      id: "show-problems",
+      label: "Show Problems",
+      icon: <AlertTriangle size={14} />,
+      action: () => {
+        const s = useStore.getState();
+        s.setBottomPanel("problems");
+        if (!s.bottomPanelVisible) s.toggleBottomPanel();
+      },
+    },
+    {
+      id: "show-output",
+      label: "Show Output",
+      icon: <Bug size={14} />,
+      action: () => {
+        const s = useStore.getState();
+        s.setBottomPanel("output");
+        if (!s.bottomPanelVisible) s.toggleBottomPanel();
+      },
+    },
+    {
+      id: "reset-zoom",
+      label: "Reset Zoom",
+      icon: <ZoomIn size={14} />,
+      action: () => useStore.getState().updateEditorSettings({ fontSize: 13 }),
+      shortcut: `${mod}+0`,
+    },
+    {
+      id: "compare-head",
+      label: "Compare with Git HEAD",
+      icon: <GitCompareArrows size={14} />,
+      action: async () => {
+        const s = useStore.getState();
+        if (!s.activeFilePath || !s.currentProject) return;
+        try {
+          const headContent = await invoke<string>("git_show_file", {
+            projectPath: s.currentProject.path,
+            filePath: s.activeFilePath,
+          });
+          const currentFile = s.openFiles.find((f) => f.path === s.activeFilePath);
+          if (currentFile) {
+            const name = currentFile.name;
+            s.showDiffView(headContent, currentFile.content, `${name} (HEAD)`, `${name} (Working)`);
+          }
+        } catch { /* file not in git */ }
+      },
     },
   ], [mod]);
 

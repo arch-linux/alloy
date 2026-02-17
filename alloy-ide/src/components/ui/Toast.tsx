@@ -37,6 +37,41 @@ const typeConfig: Record<ToastType, { icon: typeof Info; color: string; bg: stri
   },
 };
 
+// Notification history
+export interface NotificationEntry {
+  id: string;
+  type: ToastType;
+  message: string;
+  timestamp: number;
+}
+
+let notificationHistory: NotificationEntry[] = [];
+let historyListeners: ((entries: NotificationEntry[]) => void)[] = [];
+
+function notifyHistoryListeners() {
+  historyListeners.forEach((fn) => fn([...notificationHistory]));
+}
+
+export function getNotificationHistory(): NotificationEntry[] {
+  return [...notificationHistory];
+}
+
+export function clearNotificationHistory() {
+  notificationHistory = [];
+  notifyHistoryListeners();
+}
+
+export function useNotificationHistory() {
+  const [entries, setEntries] = useState<NotificationEntry[]>(notificationHistory);
+  useEffect(() => {
+    historyListeners.push(setEntries);
+    return () => {
+      historyListeners = historyListeners.filter((fn) => fn !== setEntries);
+    };
+  }, []);
+  return entries;
+}
+
 // Global toast state
 let toastListeners: ((toasts: ToastMessage[]) => void)[] = [];
 let currentToasts: ToastMessage[] = [];
@@ -50,6 +85,13 @@ export function showToast(type: ToastType, message: string, duration = 3000) {
   const toast: ToastMessage = { id, type, message, duration };
   currentToasts = [...currentToasts, toast];
   notifyListeners();
+
+  // Add to notification history
+  notificationHistory = [
+    { id, type, message, timestamp: Date.now() },
+    ...notificationHistory,
+  ].slice(0, 50);
+  notifyHistoryListeners();
 
   if (duration > 0) {
     setTimeout(() => {

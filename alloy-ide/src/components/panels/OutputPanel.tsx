@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Bot, Trash2 } from "lucide-react";
 import { useStore } from "../../lib/store";
+import { AnsiLine, stripAnsi } from "../../lib/ansi";
 
 export default function OutputPanel() {
   const [lines, setLines] = useState<string[]>([]);
@@ -28,9 +29,10 @@ export default function OutputPanel() {
     }
   }, [lines]);
 
-  const hasError = lines.some(
-    (l) => l.toLowerCase().includes("error") || l.toLowerCase().includes("failed"),
-  );
+  const hasError = lines.some((l) => {
+    const plain = stripAnsi(l).toLowerCase();
+    return plain.includes("error") || plain.includes("failed");
+  });
 
   const handleExplainError = () => {
     const last50 = lines.slice(-50).join("\n");
@@ -84,9 +86,19 @@ export default function OutputPanel() {
           <span className="text-stone-600">No build output yet. Run a build task to see output here.</span>
         ) : (
           lines.map((line, i) => {
+            const hasAnsi = /\x1b\[/.test(line);
+            if (hasAnsi) {
+              return (
+                <div key={i} className="text-stone-400">
+                  <AnsiLine text={line} />
+                </div>
+              );
+            }
+            // Fallback keyword-based coloring for plain text lines
             let color = "text-stone-400";
-            if (line.toLowerCase().includes("error")) color = "text-red-400";
-            else if (line.toLowerCase().includes("warning")) color = "text-yellow-400";
+            const lower = line.toLowerCase();
+            if (lower.includes("error")) color = "text-red-400";
+            else if (lower.includes("warning")) color = "text-yellow-400";
             else if (line.includes("BUILD SUCCESSFUL")) color = "text-green-400";
             else if (line.includes("BUILD FAILED")) color = "text-red-400";
             else if (line.startsWith(">")) color = "text-stone-300";
