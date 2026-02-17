@@ -1,0 +1,289 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.0.2)'
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  JAVA_VERSION: '21'
+  NODE_VERSION: '22'
+  BUN_VERSION: 'latest'
+
+jobs:
+  # ── Java Modules (platform-independent) ──────────────────────────────
+  build-java:
+    name: Build Java Modules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build all Java modules
+        run: ./gradlew build
+
+      - name: Collect JARs
+        run: |
+          mkdir -p artifacts/java
+          cp alloy-loader/build/libs/alloy-loader-*-SNAPSHOT.jar artifacts/java/
+          cp alloy-api/build/libs/alloy-api-*-SNAPSHOT.jar artifacts/java/
+          cp alloy-core/build/libs/AlloyCore-*-SNAPSHOT.jar artifacts/java/
+          cp alloy-client/build/libs/AlloyClient-*.jar artifacts/java/
+          cp alloy-mappings/build/libs/alloy-mappings-*-SNAPSHOT.jar artifacts/java/
+
+      - name: Bundle server distribution
+        run: |
+          mkdir -p artifacts/server-bundle
+          cp artifacts/java/alloy-loader-*-SNAPSHOT.jar artifacts/server-bundle/
+          cp artifacts/java/alloy-api-*-SNAPSHOT.jar artifacts/server-bundle/
+          cp artifacts/java/AlloyCore-*-SNAPSHOT.jar artifacts/server-bundle/
+          cd artifacts && zip -r alloy-server.zip server-bundle/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: java-artifacts
+          path: artifacts/
+
+  # ── Alloy Launcher (Tauri — all platforms) ───────────────────────────
+  build-launcher:
+    name: Build Launcher (${{ matrix.label }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS-arm64
+            runner: macos-latest
+            target: aarch64-apple-darwin
+          - label: macOS-x64
+            runner: macos-latest
+            target: x86_64-apple-darwin
+          - label: Windows-x64
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+          - label: Linux-x64
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: alloy-launcher/src-tauri
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install frontend dependencies
+        working-directory: alloy-launcher
+        run: bun install
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: alloy-launcher
+          tauriScript: bun tauri
+          args: --target ${{ matrix.target }}
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          mkdir -p launcher-out
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            cp alloy-launcher/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg launcher-out/ 2>/dev/null || true
+          elif [ "${{ runner.os }}" = "Windows" ]; then
+            cp alloy-launcher/src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi launcher-out/ 2>/dev/null || true
+            cp alloy-launcher/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe launcher-out/ 2>/dev/null || true
+          elif [ "${{ runner.os }}" = "Linux" ]; then
+            cp alloy-launcher/src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage launcher-out/ 2>/dev/null || true
+            cp alloy-launcher/src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb launcher-out/ 2>/dev/null || true
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: launcher-${{ matrix.label }}
+          path: launcher-out/
+
+  # ── Alloy IDE (Tauri — all platforms) ────────────────────────────────
+  build-ide:
+    name: Build IDE (${{ matrix.label }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS-arm64
+            runner: macos-latest
+            target: aarch64-apple-darwin
+          - label: macOS-x64
+            runner: macos-latest
+            target: x86_64-apple-darwin
+          - label: Windows-x64
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+          - label: Linux-x64
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: alloy-ide/src-tauri
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install frontend dependencies
+        working-directory: alloy-ide
+        run: bun install
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: alloy-ide
+          tauriScript: bun tauri
+          args: --target ${{ matrix.target }}
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          mkdir -p ide-out
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            cp alloy-ide/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg ide-out/ 2>/dev/null || true
+          elif [ "${{ runner.os }}" = "Windows" ]; then
+            cp alloy-ide/src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi ide-out/ 2>/dev/null || true
+            cp alloy-ide/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe ide-out/ 2>/dev/null || true
+          elif [ "${{ runner.os }}" = "Linux" ]; then
+            cp alloy-ide/src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage ide-out/ 2>/dev/null || true
+            cp alloy-ide/src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb ide-out/ 2>/dev/null || true
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ide-${{ matrix.label }}
+          path: ide-out/
+
+  # ── Create GitHub Release ────────────────────────────────────────────
+  release:
+    name: Create Release
+    needs: [build-java, build-launcher, build-ide]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: all-artifacts/
+
+      - name: Organize release assets
+        run: |
+          mkdir -p release-assets
+          # Java JARs
+          cp all-artifacts/java-artifacts/java/*.jar release-assets/
+          # Server bundle
+          cp all-artifacts/java-artifacts/alloy-server.zip release-assets/
+          # Launcher — all platforms
+          cp all-artifacts/launcher-*/* release-assets/ 2>/dev/null || true
+          # IDE — all platforms
+          cp all-artifacts/ide-*/* release-assets/ 2>/dev/null || true
+          echo "=== Release assets ==="
+          ls -lh release-assets/
+
+      - name: Determine tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Alloy ${{ steps.tag.outputs.tag }}
+          draft: false
+          prerelease: false
+          files: release-assets/*
+          body: |
+            ## Alloy ${{ steps.tag.outputs.tag }}
+
+            **Forged with Alloy.** Built for Minecraft 1.21.11.
+
+            ### Java Modules
+            | Artifact | Description |
+            |----------|-------------|
+            | `alloy-api` | Modding API — events, registries, permissions, economy |
+            | `alloy-loader` | Mod loader — ASM bytecode injection, classloader, branding |
+            | `AlloyCore` | Server mod — TPS, commands, permissions |
+            | `AlloyClient` | Client mod — UI, branding |
+            | `alloy-mappings` | Deobfuscation pipeline |
+            | `alloy-server.zip` | Server bundle (loader + API + core) |
+
+            ### Desktop Apps
+            | Platform | Launcher | IDE |
+            |----------|----------|-----|
+            | macOS (Apple Silicon) | `.dmg` | `.dmg` |
+            | macOS (Intel) | `.dmg` | `.dmg` |
+            | Windows | `.msi` | `.msi` |
+            | Linux | `.AppImage` / `.deb` | `.AppImage` / `.deb` |
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
