@@ -19,10 +19,12 @@ import CommandPalette from "../palette/CommandPalette";
 import QuickOpen from "../palette/QuickOpen";
 import GoToLine from "../palette/GoToLine";
 import SymbolSearch from "../palette/SymbolSearch";
+import FileSymbolSearch from "../palette/FileSymbolSearch";
 import SettingsDialog from "../settings/SettingsDialog";
 import ToastContainer from "../ui/Toast";
 import ConfirmDialog, { registerConfirmHandler, resolveConfirm } from "../ui/ConfirmDialog";
 import AssetImportWizard from "../assets/AssetImportWizard";
+import BlockCreationWizard from "../block-editor/BlockCreationWizard";
 import KeyboardShortcuts from "../settings/KeyboardShortcuts";
 import ModpackPanel from "../modpack/ModpackPanel";
 import SidebarSection from "./SidebarSection";
@@ -49,10 +51,13 @@ export default function IdeLayout() {
   const [quickOpenOpen, setQuickOpenOpen] = useState(false);
   const [goToLineOpen, setGoToLineOpen] = useState(false);
   const [symbolSearchOpen, setSymbolSearchOpen] = useState(false);
+  const [fileSymbolSearchOpen, setFileSymbolSearchOpen] = useState(false);
   const settingsOpen = useStore((s) => s.settingsOpen);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const assetImportSource = useStore((s) => s.assetImportSource);
   const hideAssetImport = useStore((s) => s.hideAssetImport);
+  const blockWizardOpen = useStore((s) => s.blockWizardOpen);
+  const hideBlockWizard = useStore((s) => s.hideBlockWizard);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmState | null>(null);
   const [renameState, setRenameState] = useState<{
     path: string;
@@ -197,6 +202,12 @@ export default function IdeLayout() {
         setSymbolSearchOpen((v) => !v);
         return;
       }
+      // Ctrl/Cmd+Shift+O — Go to Symbol in File
+      if (mod && e.key === "O" && e.shiftKey) {
+        e.preventDefault();
+        setFileSymbolSearchOpen((v) => !v);
+        return;
+      }
       // Ctrl/Cmd+, — Settings
       if (mod && e.key === ",") {
         e.preventDefault();
@@ -289,6 +300,36 @@ export default function IdeLayout() {
             state.closeFile(state.activeFilePath);
           }
         }
+        return;
+      }
+      // Ctrl/Cmd+Shift+W — Close all tabs
+      if (mod && e.key === "W" && e.shiftKey) {
+        e.preventDefault();
+        const state = useStore.getState();
+        [...state.openFiles].reverse().forEach((f) => state.closeFile(f.path));
+        return;
+      }
+      // Ctrl+Tab — Next tab
+      if (e.ctrlKey && e.key === "Tab" && !e.shiftKey) {
+        e.preventDefault();
+        const state = useStore.getState();
+        const { openFiles, activeFilePath } = state;
+        if (openFiles.length < 2) return;
+        const idx = openFiles.findIndex((f) => f.path === activeFilePath);
+        const next = (idx + 1) % openFiles.length;
+        state.setActiveFile(openFiles[next].path);
+        return;
+      }
+      // Ctrl+Shift+Tab — Previous tab
+      if (e.ctrlKey && e.key === "Tab" && e.shiftKey) {
+        e.preventDefault();
+        const state = useStore.getState();
+        const { openFiles, activeFilePath } = state;
+        if (openFiles.length < 2) return;
+        const idx = openFiles.findIndex((f) => f.path === activeFilePath);
+        const prev = (idx - 1 + openFiles.length) % openFiles.length;
+        state.setActiveFile(openFiles[prev].path);
+        return;
       }
       // Ctrl/Cmd+= — Zoom in
       if (mod && (e.key === "=" || e.key === "+") && !e.shiftKey) {
@@ -329,7 +370,7 @@ export default function IdeLayout() {
         ) : (
           <div className="flex flex-col h-full">
             {openFiles.length > 0 && (
-              <SidebarSection title="Open Editors" badge={openFiles.length} defaultOpen={false}>
+              <SidebarSection key="open-editors" title="Open Editors" badge={openFiles.length} defaultOpen={false}>
                 <div className="py-0.5">
                   {openFiles.map((f) => (
                     <button
@@ -349,12 +390,12 @@ export default function IdeLayout() {
                 </div>
               </SidebarSection>
             )}
-            <SidebarSection title="Files">
+            <SidebarSection key="files" title="Files">
               <div className="flex-1 min-h-0">
                 <FileTree />
               </div>
             </SidebarSection>
-            <SidebarSection title="Outline" defaultOpen={false}>
+            <SidebarSection key="outline" title="Outline" defaultOpen={false}>
               <OutlinePanel />
             </SidebarSection>
           </div>
@@ -418,6 +459,9 @@ export default function IdeLayout() {
       {symbolSearchOpen && (
         <SymbolSearch onClose={() => setSymbolSearchOpen(false)} />
       )}
+      {fileSymbolSearchOpen && (
+        <FileSymbolSearch onClose={() => setFileSymbolSearchOpen(false)} />
+      )}
       {settingsOpen && <SettingsDialog onClose={() => useStore.getState().toggleSettings()} />}
       {shortcutsOpen && <KeyboardShortcuts onClose={() => setShortcutsOpen(false)} />}
       {confirmDialog && (
@@ -439,6 +483,9 @@ export default function IdeLayout() {
       )}
       {assetImportSource && (
         <AssetImportWizard sourcePath={assetImportSource} onClose={hideAssetImport} />
+      )}
+      {blockWizardOpen && (
+        <BlockCreationWizard onClose={hideBlockWizard} />
       )}
       {codeActionsMenu && (
         <CodeActionsMenu

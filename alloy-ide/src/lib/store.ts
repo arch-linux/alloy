@@ -101,6 +101,7 @@ interface IdeStore {
 
   // File tree
   fileTree: FileEntry[];
+  expandedDirs: Set<string>;
 
   // Editor
   openFiles: OpenFile[];
@@ -157,6 +158,9 @@ interface IdeStore {
   // LSP
   lspRunning: boolean;
 
+  // Block wizard
+  blockWizardOpen: boolean;
+
   // Actions — Project
   openProject: (path: string) => Promise<void>;
   openFolderDialog: () => Promise<void>;
@@ -164,6 +168,7 @@ interface IdeStore {
 
   // Actions — File tree
   loadFileTree: (path: string) => Promise<FileEntry[]>;
+  refreshFileTree: () => Promise<void>;
   toggleDirectory: (path: string) => Promise<void>;
 
   // Actions — Editor
@@ -182,6 +187,7 @@ interface IdeStore {
   setBottomPanel: (panel: BottomPanelTab) => void;
   toggleBottomPanel: () => void;
   setBottomPanelHeight: (height: number) => void;
+  runInTerminal: (command: string) => void;
 
   // Actions — Search
   searchFiles: (query: string) => Promise<void>;
@@ -204,6 +210,7 @@ interface IdeStore {
 
   // Actions — Build
   runBuild: (task?: string) => Promise<void>;
+  validateEnvironment: () => Promise<void>;
 
   // Actions — Tab management
   reorderFiles: (fromIndex: number, toIndex: number) => void;
@@ -224,6 +231,10 @@ interface IdeStore {
   showDiffView: (original: string, modified: string, originalTitle: string, modifiedTitle: string) => void;
   closeDiffView: () => void;
 
+  // Actions — Block wizard
+  showBlockWizard: () => void;
+  hideBlockWizard: () => void;
+
   // Actions — AI
   sendMessage: (message: string) => Promise<void>;
   clearChat: () => Promise<void>;
@@ -238,6 +249,7 @@ export const useStore = create<IdeStore>((set, get) => ({
   currentProject: null,
   recentProjects: [],
   fileTree: [],
+  expandedDirs: new Set<string>(),
   openFiles: [],
   activeFilePath: null,
   cursorPosition: { line: 1, column: 1 },
@@ -297,6 +309,9 @@ export const useStore = create<IdeStore>((set, get) => ({
   // LSP initial state
   lspRunning: false,
 
+  // Block wizard initial state
+  blockWizardOpen: false,
+
   openProject: async (path: string) => {
     // Save current workspace state before switching
     const prev = get();
@@ -343,25 +358,50 @@ export const useStore = create<IdeStore>((set, get) => ({
     }
   },
 
-  loadFileTree: async (path: string) => {
-    const entries = await invoke<FileEntry[]>("list_directory", { path });
-    return entries.map((e) => ({
-      ...e,
-      expanded: false,
-      children: e.is_dir ? undefined : undefined,
-    }));
+  loadFileTree: async (dirPath: string) => {
+    const { expandedDirs } = get();
+    const entries = await invoke<FileEntry[]>("list_directory", { path: dirPath });
+
+    // Recursively rebuild tree, re-expanding previously expanded dirs
+    async function buildEntries(items: FileEntry[]): Promise<FileEntry[]> {
+      const result: FileEntry[] = [];
+      for (const e of items) {
+        if (e.is_dir && expandedDirs.has(e.path)) {
+          const children = await invoke<FileEntry[]>("list_directory", { path: e.path });
+          result.push({ ...e, expanded: true, children: await buildEntries(children) });
+        } else {
+          result.push({ ...e, expanded: false, children: undefined });
+        }
+      }
+      return result;
+    }
+
+    return buildEntries(entries);
+  },
+
+  refreshFileTree: async () => {
+    const project = get().currentProject;
+    if (!project) return;
+    const entries = await get().loadFileTree(project.path);
+    set({ fileTree: entries });
   },
 
   toggleDirectory: async (path: string) => {
-    const { fileTree, loadFileTree } = get();
+    const { fileTree, expandedDirs, loadFileTree } = get();
 
     async function toggleIn(entries: FileEntry[]): Promise<FileEntry[]> {
       const result: FileEntry[] = [];
       for (const entry of entries) {
         if (entry.path === path && entry.is_dir) {
           if (entry.expanded) {
+            const next = new Set(expandedDirs);
+            next.delete(path);
+            set({ expandedDirs: next });
             result.push({ ...entry, expanded: false, children: undefined });
           } else {
+            const next = new Set(expandedDirs);
+            next.add(path);
+            set({ expandedDirs: next });
             const children = await loadFileTree(path);
             result.push({ ...entry, expanded: true, children });
           }
@@ -513,6 +553,12 @@ export const useStore = create<IdeStore>((set, get) => ({
     set({ bottomPanelHeight: Math.max(100, Math.min(500, height)) });
   },
 
+  runInTerminal: (command: string) => {
+    // Switch to terminal panel and dispatch a custom event that Terminal component listens for
+    set({ bottomPanel: "terminal", bottomPanelVisible: true });
+    window.dispatchEvent(new CustomEvent("terminal:run-command", { detail: { command } }));
+  },
+
   // Search actions
 
   searchFiles: async (query: string) => {
@@ -541,21 +587,12 @@ export const useStore = create<IdeStore>((set, get) => ({
 
   createFile: async (path: string, content?: string) => {
     await invoke("create_file", { path, content: content ?? null });
-    // Refresh file tree at parent
-    const project = get().currentProject;
-    if (project) {
-      const entries = await get().loadFileTree(project.path);
-      set({ fileTree: entries });
-    }
+    await get().refreshFileTree();
   },
 
   createDirectory: async (path: string) => {
     await invoke("create_directory", { path });
-    const project = get().currentProject;
-    if (project) {
-      const entries = await get().loadFileTree(project.path);
-      set({ fileTree: entries });
-    }
+    await get().refreshFileTree();
   },
 
   deletePath: async (path: string) => {
@@ -566,11 +603,7 @@ export const useStore = create<IdeStore>((set, get) => ({
       if (openFiles.some((f) => f.path === path)) {
         get().closeFile(path);
       }
-      const project = get().currentProject;
-      if (project) {
-        const entries = await get().loadFileTree(project.path);
-        set({ fileTree: entries });
-      }
+      await get().refreshFileTree();
       const name = path.split("/").pop() || path;
       showToast("info", `Deleted ${name}`);
     } catch (err) {
@@ -580,11 +613,7 @@ export const useStore = create<IdeStore>((set, get) => ({
 
   renamePath: async (oldPath: string, newPath: string) => {
     await invoke("rename_path", { oldPath, newPath });
-    const project = get().currentProject;
-    if (project) {
-      const entries = await get().loadFileTree(project.path);
-      set({ fileTree: entries });
-    }
+    await get().refreshFileTree();
   },
 
   // Settings
@@ -623,27 +652,62 @@ export const useStore = create<IdeStore>((set, get) => ({
     set({ buildRunning: true, buildErrors: [], buildOutput: [] });
     showToast("info", `Running gradle ${task}...`);
 
+    // Run environment validation first
+    let envErrors: BuildError[] = [];
+    try {
+      envErrors = await invoke<BuildError[]>("validate_environment", {
+        projectPath: project.path,
+      });
+    } catch {
+      // Non-fatal — continue with build
+    }
+
     try {
       const result = await invoke<BuildResult>("run_gradle_task", {
         projectPath: project.path,
         task,
       });
+      const allErrors = [...envErrors, ...result.errors];
       set({
         buildRunning: false,
-        buildErrors: result.errors,
+        buildErrors: allErrors,
       });
-      if (result.success) {
+      if (result.success && envErrors.length === 0) {
         showToast("success", `Build succeeded`);
+      } else if (result.success && envErrors.length > 0) {
+        showToast("warning", `Build succeeded with ${envErrors.length} environment warning(s)`);
+        set({ bottomPanelVisible: true, bottomPanel: "problems" });
       } else {
-        showToast("error", `Build failed with ${result.errors.length} error(s)`);
-        // Switch to problems panel if there are errors
-        if (result.errors.length > 0) {
+        showToast("error", `Build failed with ${allErrors.length} error(s)`);
+        if (allErrors.length > 0) {
           set({ bottomPanelVisible: true, bottomPanel: "problems" });
         }
       }
     } catch (err) {
-      set({ buildRunning: false });
+      set({ buildRunning: false, buildErrors: envErrors });
       showToast("error", `Build failed: ${err}`);
+      if (envErrors.length > 0) {
+        set({ bottomPanelVisible: true, bottomPanel: "problems" });
+      }
+    }
+  },
+
+  validateEnvironment: async () => {
+    const project = get().currentProject;
+    if (!project) return;
+    try {
+      const errors = await invoke<BuildError[]>("validate_environment", {
+        projectPath: project.path,
+      });
+      set({ buildErrors: errors });
+      if (errors.length > 0) {
+        set({ bottomPanelVisible: true, bottomPanel: "problems" });
+        showToast("warning", `${errors.length} environment warning(s) found`);
+      } else {
+        showToast("success", "No environment violations found");
+      }
+    } catch (err) {
+      showToast("error", `Validation failed: ${err}`);
     }
   },
 
@@ -786,6 +850,16 @@ export const useStore = create<IdeStore>((set, get) => ({
     set({ diffView: null });
   },
 
+  // Block wizard
+
+  showBlockWizard: () => {
+    set({ blockWizardOpen: true });
+  },
+
+  hideBlockWizard: () => {
+    set({ blockWizardOpen: false });
+  },
+
   // AI actions
 
   sendMessage: async (message: string) => {
@@ -897,6 +971,9 @@ export function initAiListeners() {
           f.path === path ? { ...f, externallyModified: true } : f,
         ),
       });
+      const { showToast } = await import("../components/ui/Toast");
+      const fileName = path.split("/").pop() || path;
+      showToast("warning", `"${fileName}" changed on disk — reload or keep your changes`);
       return;
     }
 

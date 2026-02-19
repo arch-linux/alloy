@@ -3,6 +3,9 @@ package net.alloymc.api.entity;
 import net.alloymc.api.block.Block;
 import net.alloymc.api.block.BlockFace;
 import net.alloymc.api.command.CommandSender;
+import net.alloymc.api.gui.MenuInstance;
+import net.alloymc.api.gui.MenuLayout;
+import net.alloymc.api.inventory.CustomInventory;
 import net.alloymc.api.inventory.Inventory;
 import net.alloymc.api.inventory.ItemStack;
 import net.alloymc.api.inventory.Material;
@@ -115,6 +118,47 @@ public interface Player extends LivingEntity, CommandSender {
      * Returns the player's game level (experience level).
      */
     int level();
+
+    /**
+     * Opens a custom inventory GUI for this player.
+     *
+     * @param inventory the custom inventory to display
+     */
+    void openInventory(CustomInventory inventory);
+
+    /**
+     * Closes the player's currently open inventory GUI.
+     */
+    void closeInventory();
+
+    /**
+     * Opens a menu layout GUI for this player.
+     *
+     * @param layout the menu layout to display
+     * @return a live MenuInstance for reading/writing items and properties
+     */
+    MenuInstance openMenu(MenuLayout layout);
+
+    /**
+     * Sends a rich message with click-to-copy, hover text, and optional color.
+     *
+     * @param displayText the text shown in chat
+     * @param copyText    the text copied to clipboard when clicked
+     * @param hoverText   the tooltip shown on hover
+     * @param colorRgb    RGB color (e.g. 0xFFAA00 for gold), or -1 for default
+     */
+    void sendRichMessage(String displayText, String copyText, String hoverText, int colorRgb);
+
+    /**
+     * Sends a clickable message that copies text to the player's clipboard when clicked.
+     * Shows "Click to copy to clipboard" on hover. Uses default chat color.
+     *
+     * @param displayText the text shown in chat
+     * @param copyText    the text copied to clipboard when clicked
+     */
+    default void sendClickableMessage(String displayText, String copyText) {
+        sendRichMessage(displayText, copyText, "Click to copy to clipboard", -1);
+    }
 
     enum MessageType {
         INFO,

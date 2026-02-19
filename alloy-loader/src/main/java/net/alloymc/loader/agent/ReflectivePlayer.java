@@ -6,6 +6,9 @@ import net.alloymc.api.entity.Entity;
 import net.alloymc.api.entity.EntityType;
 import net.alloymc.api.entity.LivingEntity;
 import net.alloymc.api.entity.Player;
+import net.alloymc.api.gui.MenuInstance;
+import net.alloymc.api.gui.MenuLayout;
+import net.alloymc.api.inventory.CustomInventory;
 import net.alloymc.api.inventory.Inventory;
 import net.alloymc.api.inventory.ItemStack;
 import net.alloymc.api.inventory.Material;
@@ -13,8 +16,11 @@ import net.alloymc.api.world.Location;
 import net.alloymc.api.world.World;
 import net.alloymc.api.AlloyAPI;
 
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.util.UUID;
 
 /**
@@ -289,6 +295,110 @@ public final class ReflectivePlayer implements Player {
     @Override public void sendMessage(String message, MessageType type) { sendMessage(message); }
 
     @Override
+    public void sendRichMessage(String displayText, String copyText, String hoverText, int colorRgb) {
+        try {
+            ClassLoader cl = handle.getClass().getClassLoader();
+
+            // 1. Create display component: Component.literal(displayText) -> yh.b(String)
+            Class<?> componentClass = cl.loadClass("yh");
+            Method literalMethod = null;
+            for (Method m : componentClass.getMethods()) {
+                if (m.getName().equals("b") && m.getParameterCount() == 1
+                        && m.getParameterTypes()[0] == String.class) {
+                    literalMethod = m;
+                    break;
+                }
+            }
+            if (literalMethod == null) {
+                sendMessage(displayText); // fallback
+                return;
+            }
+            Object component = literalMethod.invoke(null, displayText);
+
+            // 2. Create ClickEvent.CopyToClipboard: new yf$c(String)
+            Class<?> copyToClipboardClass = cl.loadClass("yf$c");
+            Constructor<?> clickCtor = copyToClipboardClass.getConstructor(String.class);
+            Object clickEvent = clickCtor.newInstance(copyText);
+
+            // 3. Create hover component and HoverEvent.ShowText: new yo$e(Component)
+            Object hoverComponent = literalMethod.invoke(null, hoverText);
+            Class<?> showTextClass = cl.loadClass("yo$e");
+            Constructor<?> hoverCtor = null;
+            for (Constructor<?> c : showTextClass.getDeclaredConstructors()) {
+                if (c.getParameterCount() == 1 && c.getParameterTypes()[0].isInstance(hoverComponent)) {
+                    hoverCtor = c;
+                    break;
+                }
+            }
+            if (hoverCtor == null) {
+                sendMessage(displayText);
+                return;
+            }
+            Object hoverEvent = hoverCtor.newInstance(hoverComponent);
+
+            // 4. Build Style starting from Style.EMPTY -> zf.a (static field)
+            Class<?> styleClass = cl.loadClass("zf");
+            Field emptyField = styleClass.getDeclaredField("a");
+            emptyField.setAccessible(true);
+            Object style = emptyField.get(null);
+
+            // 5. style.withClickEvent(clickEvent) -> zf.a(yf)
+            Class<?> clickEventClass = cl.loadClass("yf");
+            for (Method m : styleClass.getMethods()) {
+                if (m.getName().equals("a") && m.getParameterCount() == 1
+                        && m.getParameterTypes()[0] == clickEventClass) {
+                    style = m.invoke(style, clickEvent);
+                    break;
+                }
+            }
+
+            // 6. style.withHoverEvent(hoverEvent) -> zf.a(yo)
+            Class<?> hoverEventClass = cl.loadClass("yo");
+            for (Method m : styleClass.getMethods()) {
+                if (m.getName().equals("a") && m.getParameterCount() == 1
+                        && m.getParameterTypes()[0] == hoverEventClass) {
+                    style = m.invoke(style, hoverEvent);
+                    break;
+                }
+            }
+
+            // 7. Apply color if specified: style.withColor(int) -> zf.a(int)
+            if (colorRgb >= 0) {
+                for (Method m : styleClass.getMethods()) {
+                    if (m.getName().equals("a") && m.getParameterCount() == 1
+                            && m.getParameterTypes()[0] == int.class
+                            && m.getReturnType() == styleClass) {
+                        style = m.invoke(style, colorRgb);
+                        break;
+                    }
+                }
+            }
+
+            // 8. component.withStyle(style) -> yw.c(zf)
+            for (Method m : component.getClass().getMethods()) {
+                if (m.getName().equals("c") && m.getParameterCount() == 1
+                        && m.getParameterTypes()[0] == styleClass) {
+                    component = m.invoke(component, style);
+                    break;
+                }
+            }
+
+            // 9. Send: serverPlayer.sendSystemMessage(component) -> axg.a(yh)
+            for (Method m : handle.getClass().getMethods()) {
+                if (m.getName().equals("a") && m.getParameterCount() == 1
+                        && m.getParameterTypes()[0].isInterface()
+                        && m.getParameterTypes()[0].isInstance(component)) {
+                    m.invoke(handle, component);
+                    return;
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("[Alloy] Failed to send rich message to " + name + ": " + e.getMessage());
+            sendMessage(displayText); // fallback to plain message
+        }
+    }
+
+    @Override
     public ItemStack itemInMainHand() {
         try {
             Object mcItem = EventFiringHook.invokeNoArgs(handle, "fx"); // getMainHandItem
@@ -521,6 +631,182 @@ public final class ReflectivePlayer implements Player {
             }
         } catch (Exception ignored) {}
         return 0;
+    }
+
+    @Override
+    public void openInventory(CustomInventory inventory) {
+        if (!(inventory instanceof ReflectiveCustomInventory rci)) {
+            System.err.println("[Alloy] openInventory requires ReflectiveCustomInventory");
+            return;
+        }
+        try {
+            ClassLoader cl = handle.getClass().getClassLoader();
+            Object mcContainer = rci.handle();
+            int rows = rci.rows();
+            String invTitle = rci.title();
+
+            // 1. Create the title Component: Component.literal(title) -> yh.b(String)
+            //    Note: uses yh.b per verified mappings (the "b" static method on Component interface)
+            Class<?> componentClass = cl.loadClass("yh");
+            Method literalMethod = null;
+            for (Method m : componentClass.getMethods()) {
+                if (m.getName().equals("b") && m.getParameterCount() == 1
+                        && m.getParameterTypes()[0] == String.class) {
+                    literalMethod = m;
+                    break;
+                }
+            }
+            if (literalMethod == null) {
+                System.err.println("[Alloy] Could not find Component.literal method");
+                return;
+            }
+            Object titleComponent = literalMethod.invoke(null, invTitle);
+
+            // 2. Load MC classes we need
+            Class<?> menuConstructorClass = cl.loadClass("dir");   // MenuConstructor
+            Class<?> simpleMenuProviderClass = cl.loadClass("cdl"); // SimpleMenuProvider
+            Class<?> menuTypeClass = cl.loadClass("dis");          // MenuType
+            Class<?> chestMenuClass = cl.loadClass("dhs");         // ChestMenu
+            Class<?> containerClass = cl.loadClass("ccv");         // Container interface
+            Class<?> playerInvClass = cl.loadClass("ddl");         // Inventory (player)
+            Class<?> menuProviderClass = cl.loadClass("cdf");      // MenuProvider
+
+            // 3. Get the correct MenuType for the row count: dis.a through dis.f
+            String menuTypeFieldName = switch (rows) {
+                case 1 -> "a";
+                case 2 -> "b";
+                case 3 -> "c";
+                case 4 -> "d";
+                case 5 -> "e";
+                case 6 -> "f";
+                default -> throw new IllegalArgumentException("Invalid rows: " + rows);
+            };
+            Field menuTypeField = menuTypeClass.getDeclaredField(menuTypeFieldName);
+            menuTypeField.setAccessible(true);
+            Object menuType = menuTypeField.get(null);
+
+            // 4. Find ChestMenu constructor: dhs(MenuType, int, Inventory, Container, int)
+            Constructor<?> chestMenuCtor = null;
+            for (Constructor<?> ctor : chestMenuClass.getDeclaredConstructors()) {
+                if (ctor.getParameterCount() == 5
+                        && ctor.getParameterTypes()[0] == menuTypeClass
+                        && ctor.getParameterTypes()[1] == int.class
+                        && ctor.getParameterTypes()[2] == playerInvClass
+                        && ctor.getParameterTypes()[3] == containerClass
+                        && ctor.getParameterTypes()[4] == int.class) {
+                    ctor.setAccessible(true);
+                    chestMenuCtor = ctor;
+                    break;
+                }
+            }
+            if (chestMenuCtor == null) {
+                System.err.println("[Alloy] Could not find ChestMenu(MenuType,int,Inv,Container,int) constructor");
+                return;
+            }
+
+            // 5. Create a MenuConstructor dynamic proxy (functional interface dir)
+            //    createMenu(int syncId, Inventory playerInv, Player player) -> returns AbstractContainerMenu
+            final Constructor<?> finalChestMenuCtor = chestMenuCtor;
+            final Object finalMenuType = menuType;
+            final int finalRows = rows;
+            InvocationHandler menuHandler = (proxy, method, args) -> {
+                if ("createMenu".equals(method.getName()) && args != null && args.length == 3) {
+                    int syncId = (int) args[0];
+                    Object playerInv = args[1];
+                    // Create ChestMenu: new dhs(menuType, syncId, playerInv, container, rows)
+                    return finalChestMenuCtor.newInstance(finalMenuType, syncId, playerInv, mcContainer, finalRows);
+                }
+                // Default Object methods
+                if ("toString".equals(method.getName())) return "AlloyMenuConstructor";
+                if ("hashCode".equals(method.getName())) return System.identityHashCode(proxy);
+                if ("equals".equals(method.getName())) return proxy == args[0];
+                return null;
+            };
+            Object menuConstructorProxy = Proxy.newProxyInstance(cl, new Class<?>[]{menuConstructorClass}, menuHandler);
+
+            // 6. Create SimpleMenuProvider: new cdl(MenuConstructor, Component)
+            Constructor<?> smpCtor = null;
+            for (Constructor<?> ctor : simpleMenuProviderClass.getDeclaredConstructors()) {
+                if (ctor.getParameterCount() == 2) {
+                    ctor.setAccessible(true);
+                    smpCtor = ctor;
+                    break;
+                }
+            }
+            if (smpCtor == null) {
+                System.err.println("[Alloy] Could not find SimpleMenuProvider constructor");
+                return;
+            }
+            Object menuProvider = smpCtor.newInstance(menuConstructorProxy, titleComponent);
+
+            // 7. Register the open inventory for event tracking BEFORE calling openMenu
+            EventFiringHook.registerOpenInventory(uuid, rci);
+
+            // 8. Call ServerPlayer.openMenu(MenuProvider) -> axg.a(cdf)
+            for (Method m : handle.getClass().getMethods()) {
+                if (m.getName().equals("a") && m.getParameterCount() == 1
+                        && m.getParameterTypes()[0] == menuProviderClass) {
+                    m.setAccessible(true);
+                    m.invoke(handle, menuProvider);
+                    return;
+                }
+            }
+
+            // Fallback: search for method accepting MenuProvider's type
+            for (Method m : handle.getClass().getMethods()) {
+                if (m.getName().equals("a") && m.getParameterCount() == 1
+                        && m.getParameterTypes()[0].isInstance(menuProvider)
+                        && m.getReturnType().getName().contains("OptionalInt")) {
+                    m.setAccessible(true);
+                    m.invoke(handle, menuProvider);
+                    return;
+                }
+            }
+
+            System.err.println("[Alloy] Could not find ServerPlayer.openMenu method");
+        } catch (Exception e) {
+            System.err.println("[Alloy] Failed to open inventory for " + name + ": " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    @Override
+    public void closeInventory() {
+        try {
+            // ServerPlayer.closeContainer() -> axg.r()
+            Method closeMethod = null;
+            for (Method m : handle.getClass().getMethods()) {
+                if (m.getName().equals("r") && m.getParameterCount() == 0
+                        && m.getReturnType() == void.class) {
+                    closeMethod = m;
+                    break;
+                }
+            }
+            if (closeMethod != null) {
+                closeMethod.setAccessible(true);
+                closeMethod.invoke(handle);
+            }
+        } catch (Exception e) {
+            System.err.println("[Alloy] Failed to close inventory for " + name + ": " + e.getMessage());
+        }
+    }
+
+    @Override
+    public MenuInstance openMenu(MenuLayout layout) {
+        // Create a backing CustomInventory for the menu's slot storage
+        CustomInventory backing = CustomInventory.create(layout.title(), layout.rows());
+        if (!(backing instanceof ReflectiveCustomInventory rci)) {
+            System.err.println("[Alloy] openMenu requires ReflectiveCustomInventory backing");
+            return null;
+        }
+
+        ReflectiveMenuInstance instance = new ReflectiveMenuInstance(layout, this, rci);
+
+        // Register for event tracking, then open the inventory GUI
+        EventFiringHook.registerMenuInstance(uuid, instance);
+        openInventory(backing);
+
+        return instance;
     }
 
     // =================== PermissionHolder ===================

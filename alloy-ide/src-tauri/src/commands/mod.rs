@@ -1,5 +1,6 @@
 pub mod ai;
 pub mod assets;
+pub mod block;
 pub mod build;
 pub mod filesystem;
 pub mod gui;

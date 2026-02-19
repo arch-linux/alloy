@@ -301,13 +301,22 @@ function HomeScreen({
             </div>
           ) : (
             <div className="flex flex-col gap-0.5">
-              {recentProjects.slice(0, 6).map((p) => (
+              {[...recentProjects]
+                .sort((a, b) => b.last_opened - a.last_opened)
+                .slice(0, 6)
+                .map((p) => (
                 <button
                   key={p.path}
                   onClick={() => onOpenRecent(p.path)}
                   className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-xs hover:bg-obsidian-800/80 transition-colors group cursor-pointer"
                 >
-                  <FolderOpen size={14} className="text-stone-600 group-hover:text-ember/70 shrink-0 transition-colors" />
+                  {p.project_type === "mod" ? (
+                    <Shield size={14} className="text-ember/50 group-hover:text-ember shrink-0 transition-colors" />
+                  ) : p.project_type === "modpack" ? (
+                    <Package size={14} className="text-forge-gold/50 group-hover:text-forge-gold shrink-0 transition-colors" />
+                  ) : (
+                    <FolderOpen size={14} className="text-stone-600 group-hover:text-ember/70 shrink-0 transition-colors" />
+                  )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-stone-200 font-medium truncate group-hover:text-stone-100">

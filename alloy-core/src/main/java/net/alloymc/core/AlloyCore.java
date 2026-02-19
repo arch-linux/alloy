@@ -5,7 +5,9 @@ import net.alloymc.api.permission.PermissionRegistry;
 import net.alloymc.api.permission.PermissionRegistry.PermissionDefault;
 import net.alloymc.core.command.AlloyCommand;
 import net.alloymc.core.command.BalanceCommand;
+import net.alloymc.core.command.DeopCommand;
 import net.alloymc.core.command.ModsCommand;
+import net.alloymc.core.command.OpCommand;
 import net.alloymc.core.command.PayCommand;
 import net.alloymc.core.command.PermissionCommand;
 import net.alloymc.core.command.SetMoneyCommand;
@@ -68,6 +70,8 @@ public class AlloyCore implements ModInitializer {
         registry.register("alloy.command.balance", "Check balance", PermissionDefault.TRUE);
         registry.register("alloy.command.pay", "Pay another player", PermissionDefault.TRUE);
         registry.register("alloy.command.setmoney", "Set a player's balance", PermissionDefault.OP);
+        registry.register("alloy.command.op", "Grant operator status", PermissionDefault.OP);
+        registry.register("alloy.command.deop", "Revoke operator status", PermissionDefault.OP);
     }
 
     private void registerCommands() {
@@ -79,7 +83,9 @@ public class AlloyCore implements ModInitializer {
         commandRegistry.register(new BalanceCommand());
         commandRegistry.register(new PayCommand());
         commandRegistry.register(new SetMoneyCommand());
-        System.out.println("[AlloyCore] Registered 7 commands");
+        commandRegistry.register(new OpCommand(permissionProvider));
+        commandRegistry.register(new DeopCommand(permissionProvider));
+        System.out.println("[AlloyCore] Registered 9 commands");
     }
 
     public static AlloyCore getInstance() {

@@ -8,7 +8,10 @@ import {
   Save,
   Code,
   Settings2,
+  FileOutput,
 } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { useStore } from "../../lib/store";
 import { showToast } from "../ui/Toast";
 import type { AnimationProject, AnimationTrack, Keyframe, AnimPropertyType } from "../../lib/types";
 import Timeline from "./Timeline";
@@ -197,11 +200,49 @@ export default function AnimationEditor({ path, content, onSave }: Props) {
     [updateProject],
   );
 
+  const currentProject = useStore((s) => s.currentProject);
+  const openFile = useStore((s) => s.openFile);
+
   const handleSave = useCallback(() => {
     const json = JSON.stringify(project, null, 2);
     onSave(json);
     showToast("success", "Animation saved");
   }, [project, onSave]);
+
+  const handleExport = useCallback(async () => {
+    if (!currentProject) {
+      showToast("error", "No project open");
+      return;
+    }
+    const json = JSON.stringify(project, null, 2);
+    onSave(json);
+
+    try {
+      await invoke("write_file", { path, content: json });
+    } catch (e) {
+      showToast("error", `Failed to save animation file: ${e}`);
+      return;
+    }
+
+    const modId = currentProject.name?.toLowerCase().replace(/[^a-z0-9]/g, "") || "mymod";
+    const packageName = `com.${modId}`;
+
+    try {
+      const result = await invoke<{ java_path: string; java_code: string }>("generate_anim_code", {
+        args: {
+          anim_path: path,
+          project_path: currentProject.path,
+          mod_id: modId,
+          package_name: packageName,
+        },
+      });
+      showToast("success", "Animation Java code exported");
+      const fileName = result.java_path.split("/").pop() || "Animation.java";
+      openFile(result.java_path, fileName);
+    } catch (e) {
+      showToast("error", `Export failed: ${e}`);
+    }
+  }, [project, currentProject, path, onSave, openFile]);
 
   const togglePlay = () => {
     if (isPlaying) {
@@ -304,6 +345,13 @@ export default function AnimationEditor({ path, content, onSave }: Props) {
           title="Save"
         >
           <Save size={13} />
+        </button>
+        <button
+          onClick={handleExport}
+          className="p-1.5 rounded text-stone-500 hover:text-stone-300 hover:bg-obsidian-800 transition-colors cursor-pointer"
+          title="Export to Java"
+        >
+          <FileOutput size={13} />
         </button>
       </div>
 

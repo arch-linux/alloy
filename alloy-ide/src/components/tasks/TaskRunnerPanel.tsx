@@ -11,6 +11,7 @@ import {
   ChevronRight,
   History,
   RotateCcw,
+  Terminal,
 } from "lucide-react";
 import { useStore } from "../../lib/store";
 
@@ -52,6 +53,7 @@ export default function TaskRunnerPanel() {
   const currentProject = useStore((s) => s.currentProject);
   const buildRunning = useStore((s) => s.buildRunning);
   const runBuild = useStore((s) => s.runBuild);
+  const runInTerminal = useStore((s) => s.runInTerminal);
 
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
     new Set(["build", "run"])
@@ -66,6 +68,12 @@ export default function TaskRunnerPanel() {
       else next.add(id);
       return next;
     });
+  };
+
+  const executeInTerminal = (taskName: string) => {
+    if (!currentProject) return;
+    const cmd = `./gradlew ${taskName} --console=plain`;
+    runInTerminal(cmd);
   };
 
   const executeTask = async (taskName: string) => {
@@ -148,21 +156,30 @@ export default function TaskRunnerPanel() {
               {expanded && (
                 <div className="pl-3">
                   {tasks.map((task) => (
-                    <button
+                    <div
                       key={task.name}
-                      onClick={() => executeTask(task.name)}
-                      disabled={buildRunning}
-                      className="flex w-full items-center gap-2 px-3 py-1.5 text-stone-400 hover:text-stone-100 hover:bg-obsidian-800 disabled:opacity-40 transition-colors group"
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-stone-400 hover:text-stone-100 hover:bg-obsidian-800 transition-colors group"
                     >
-                      <Play
-                        size={11}
-                        className="text-stone-600 group-hover:text-ember shrink-0 transition-colors"
-                      />
-                      <div className="flex flex-col items-start min-w-0">
+                      <button
+                        onClick={() => executeTask(task.name)}
+                        disabled={buildRunning}
+                        className="text-stone-600 group-hover:text-ember shrink-0 transition-colors disabled:opacity-40 cursor-pointer"
+                        title="Run task"
+                      >
+                        <Play size={11} />
+                      </button>
+                      <button
+                        onClick={() => executeInTerminal(task.name)}
+                        className="text-stone-600 group-hover:text-stone-400 hover:!text-ember shrink-0 transition-colors cursor-pointer"
+                        title="Run in terminal"
+                      >
+                        <Terminal size={11} />
+                      </button>
+                      <div className="flex flex-col items-start min-w-0 cursor-pointer flex-1" onClick={() => executeTask(task.name)}>
                         <span className="text-[11px] truncate">{task.label}</span>
                         <span className="text-[10px] text-stone-600 truncate">{task.description}</span>
                       </div>
-                    </button>
+                    </div>
                   ))}
                 </div>
               )}

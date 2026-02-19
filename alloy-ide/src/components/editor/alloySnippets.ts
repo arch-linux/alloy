@@ -3,8 +3,7 @@
  * Provides Alloy-specific Java code templates.
  */
 
-import { autocompletion, type CompletionContext, type Completion } from "@codemirror/autocomplete";
-import type { Extension } from "@codemirror/state";
+import type { CompletionContext, Completion, CompletionSource } from "@codemirror/autocomplete";
 
 interface SnippetDef {
   label: string;
@@ -220,10 +219,8 @@ function alloyCompletions(context: CompletionContext) {
 }
 
 /**
- * Extension for Alloy API code snippets.
+ * Returns the Alloy snippet completion source.
  */
-export function alloySnippets(): Extension {
-  return autocompletion({
-    override: [alloyCompletions],
-  });
+export function alloySnippets(): CompletionSource {
+  return alloyCompletions;
 }

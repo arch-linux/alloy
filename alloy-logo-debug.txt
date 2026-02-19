@@ -1,0 +1,21 @@
+[Alloy Logo Init] 2026-02-16T23:04:49.650658Z
+icon.path = /Users/archlinuxusa/Desktop/alloy/alloy-client/src/main/resources/assets/alloy/textures/alloy_logo.png
+PNG bytes: 1318
+EXCEPTION: java.lang.ClassNotFoundException: fyh
+	at java.base/java.lang.Class.forName0(Native Method)
+	at java.base/java.lang.Class.forName(Class.java:467)
+	at java.base/java.lang.Class.forName(Class.java:458)
+	at net.alloymc.loader.agent.AlloyBranding.initializeLogo(AlloyBranding.java:270)
+	at net.alloymc.loader.agent.AlloyBranding.renderLogo(AlloyBranding.java:130)
+	at gsd.a(SourceFile:268)
+	at gsb.c(SourceFile:119)
+	at grr.a(SourceFile:84)
+	at hob.a(SourceFile:526)
+	at gfj.d(SourceFile:1393)
+	at gfj.j(SourceFile:966)
+	at net.minecraft.client.main.Main.main(SourceFile:250)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565)
+	at net.alloymc.loader.launch.GameLauncher.launch(GameLauncher.java:28)
+	at net.alloymc.loader.AlloyLoader.main(AlloyLoader.java:182)
+

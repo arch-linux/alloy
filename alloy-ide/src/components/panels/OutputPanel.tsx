@@ -4,6 +4,9 @@ import { Bot, Trash2 } from "lucide-react";
 import { useStore } from "../../lib/store";
 import { AnsiLine, stripAnsi } from "../../lib/ansi";
 
+// Regex to detect Java compiler error lines: /path/File.java:42: error: message
+const JAVA_ERROR_RE = /^(.*\.java):(\d+):/;
+
 export default function OutputPanel() {
   const [lines, setLines] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -11,6 +14,8 @@ export default function OutputPanel() {
   const setSidebarPanel = useStore((s) => s.setSidebarPanel);
   const aiConfig = useStore((s) => s.aiConfig);
   const buildRunning = useStore((s) => s.buildRunning);
+  const openFile = useStore((s) => s.openFile);
+  const goToLine = useStore((s) => s.goToLine);
 
   // Listen for build output events
   useEffect(() => {
@@ -86,25 +91,47 @@ export default function OutputPanel() {
           <span className="text-stone-600">No build output yet. Run a build task to see output here.</span>
         ) : (
           lines.map((line, i) => {
+            const plain = stripAnsi(line);
+            const errorMatch = plain.match(JAVA_ERROR_RE);
+            const isClickable = !!errorMatch;
             const hasAnsi = /\x1b\[/.test(line);
+
+            const handleClick = isClickable
+              ? async () => {
+                  const filePath = errorMatch![1];
+                  const lineNum = parseInt(errorMatch![2], 10);
+                  const name = filePath.split("/").pop() || filePath;
+                  await openFile(filePath, name);
+                  setTimeout(() => goToLine(lineNum), 50);
+                }
+              : undefined;
+
             if (hasAnsi) {
               return (
-                <div key={i} className="text-stone-400">
+                <div
+                  key={i}
+                  className={"text-stone-400" + (isClickable ? " cursor-pointer hover:underline hover:text-red-300" : "")}
+                  onClick={handleClick}
+                >
                   <AnsiLine text={line} />
                 </div>
               );
             }
             // Fallback keyword-based coloring for plain text lines
             let color = "text-stone-400";
-            const lower = line.toLowerCase();
+            const lower = plain.toLowerCase();
             if (lower.includes("error")) color = "text-red-400";
             else if (lower.includes("warning")) color = "text-yellow-400";
-            else if (line.includes("BUILD SUCCESSFUL")) color = "text-green-400";
-            else if (line.includes("BUILD FAILED")) color = "text-red-400";
-            else if (line.startsWith(">")) color = "text-stone-300";
+            else if (plain.includes("BUILD SUCCESSFUL")) color = "text-green-400";
+            else if (plain.includes("BUILD FAILED")) color = "text-red-400";
+            else if (plain.startsWith(">")) color = "text-stone-300";
 
             return (
-              <div key={i} className={color}>
+              <div
+                key={i}
+                className={color + (isClickable ? " cursor-pointer hover:underline hover:brightness-125" : "")}
+                onClick={handleClick}
+              >
                 {line}
               </div>
             );

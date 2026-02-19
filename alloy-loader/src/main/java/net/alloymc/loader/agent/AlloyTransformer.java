@@ -51,6 +51,13 @@ public final class AlloyTransformer implements ClassFileTransformer {
     private static final String COMMAND_DISPATCH_HOOK_CLASS = "net/alloymc/loader/agent/CommandDispatchHook";
     private static final String EVENT_HOOK_CLASS = "net/alloymc/loader/agent/EventFiringHook";
 
+    // --- Handshake: ServerHandshakePacketListenerImpl (ayj) ---
+    private static final String HANDSHAKE_HANDLER_CLASS = "ayj";
+    private static final String HANDSHAKE_HOOK_CLASS = "net/alloymc/loader/agent/AlloyHandshakeHook";
+
+    // --- Handshake: ClientIntentionPacket (akj) ---
+    private static final String CLIENT_INTENTION_PACKET_CLASS = "akj";
+
     // --- Server-side: PlayerList (bbz) ---
     private static final String PLAYER_LIST_CLASS = "bbz";
 
@@ -86,6 +93,8 @@ public final class AlloyTransformer implements ClassFileTransformer {
     private static final String SET_CARRIED_ITEM_PACKET_DESC = "(Lajt;)V";
     private static final String SIGN_UPDATE_PACKET_DESC = "(Laka;)V";
     private static final String USE_ITEM_ON_PACKET_DESC = "(Lake;)V";
+    private static final String CONTAINER_CLICK_PACKET_DESC = "(Lais;)V";
+    private static final String CONTAINER_CLOSE_PACKET_DESC = "(Lait;)V";
 
     // --- InteractionResult (cdc) ---
     private static final String INTERACTION_RESULT_CLASS = "cdc";
@@ -132,6 +141,7 @@ public final class AlloyTransformer implements ClassFileTransformer {
         if (!"client".equalsIgnoreCase(System.getProperty("alloy.environment"))) {
             byte[] serverResult = switch (className) {
                 case SERVER_GAME_HANDLER_CLASS -> transformServerGameHandler(classfileBuffer);
+                case HANDSHAKE_HANDLER_CLASS -> transformHandshakeHandler(classfileBuffer);
                 case PLAYER_LIST_CLASS -> transformPlayerList(classfileBuffer);
                 case SERVER_PLAYER_GAME_MODE_CLASS -> transformServerPlayerGameMode(classfileBuffer);
                 case MINECRAFT_SERVER_CLASS -> transformMinecraftServer(classfileBuffer);
@@ -166,6 +176,7 @@ public final class AlloyTransformer implements ClassFileTransformer {
             case PAUSE_SCREEN_CLASS -> transformPauseScreen(classfileBuffer, loader);
             case ABSTRACT_BUTTON_CLASS -> transformAbstractButton(classfileBuffer);
             case ABSTRACT_SLIDER_CLASS -> transformAbstractSlider(classfileBuffer);
+            case CLIENT_INTENTION_PACKET_CLASS -> transformClientIntentionPacket(classfileBuffer);
             default -> null;
         };
     }
@@ -795,11 +806,32 @@ public final class AlloyTransformer implements ClassFileTransformer {
                     // from ServerPlayerGameMode.useItemOn (checkUseItemOn) instead,
                     // which has proper InteractionResult cancellation support.
 
+                    // handleContainerClick: a(Lais;)V — ServerboundContainerClickPacket
+                    if ("a".equals(name) && CONTAINER_CLICK_PACKET_DESC.equals(descriptor)) {
+                        return injectCancellableVoidHook(mv, "handleContainerClickPacket");
+                    }
+
+                    // handleContainerClose: a(Lait;)V — ServerboundContainerClosePacket
+                    if ("a".equals(name) && CONTAINER_CLOSE_PACKET_DESC.equals(descriptor)) {
+                        return new MethodVisitor(Opcodes.ASM9, mv) {
+                            @Override
+                            public void visitCode() {
+                                super.visitCode();
+                                emitSafeVoidCall(mv, EVENT_HOOK_CLASS, "fireContainerClose",
+                                        "(Ljava/lang/Object;Ljava/lang/Object;)V",
+                                        () -> {
+                                            mv.visitVarInsn(Opcodes.ALOAD, 0); // this (handler)
+                                            mv.visitVarInsn(Opcodes.ALOAD, 1); // packet
+                                        });
+                            }
+                        };
+                    }
+
                     return mv;
                 }
             };
             reader.accept(visitor, ClassReader.SKIP_FRAMES);
-            System.out.println("[Alloy] Transformed: ServerGamePacketListenerImpl \u2014 command, chat, action, interact hooks injected");
+            System.out.println("[Alloy] Transformed: ServerGamePacketListenerImpl \u2014 command, chat, action, interact, container click/close hooks injected");
             return writer.toByteArray();
         } catch (Exception e) {
             System.err.println("[Alloy] Failed to transform ServerGamePacketListenerImpl: " + e.getMessage());
@@ -825,9 +857,38 @@ public final class AlloyTransformer implements ClassFileTransformer {
                                                  String signature, String[] exceptions) {
                     MethodVisitor mv = super.visitMethod(access, name, descriptor, signature, exceptions);
 
-                    // placeNewPlayer: a(Lwu;Laxg;Laxu;)V — fire join at end
+                    // placeNewPlayer: a(Lwu;Laxg;Laxu;)V
+                    // - START: verify Alloy handshake (safety net)
+                    // - END: fire PlayerJoinEvent
                     if ("a".equals(name) && "(Lwu;Laxg;Laxu;)V".equals(descriptor)) {
                         return new MethodVisitor(Opcodes.ASM9, mv) {
+                            @Override
+                            public void visitCode() {
+                                super.visitCode();
+                                // if (AlloyHandshakeHook.verifyOnJoin(connection, serverPlayer)) return;
+                                Label tryStart = new Label();
+                                Label tryEnd = new Label();
+                                Label catchHandler = new Label();
+                                Label continueLabel = new Label();
+
+                                mv.visitTryCatchBlock(tryStart, tryEnd, catchHandler, "java/lang/Throwable");
+
+                                mv.visitLabel(tryStart);
+                                mv.visitVarInsn(Opcodes.ALOAD, 1); // connection (wu)
+                                mv.visitVarInsn(Opcodes.ALOAD, 2); // serverPlayer (axg)
+                                mv.visitMethodInsn(Opcodes.INVOKESTATIC, HANDSHAKE_HOOK_CLASS,
+                                        "verifyOnJoin",
+                                        "(Ljava/lang/Object;Ljava/lang/Object;)Z", false);
+                                mv.visitJumpInsn(Opcodes.IFEQ, continueLabel);
+                                mv.visitInsn(Opcodes.RETURN);
+                                mv.visitLabel(tryEnd);
+                                mv.visitJumpInsn(Opcodes.GOTO, continueLabel);
+
+                                mv.visitLabel(catchHandler);
+                                mv.visitInsn(Opcodes.POP); // discard the Throwable
+                                mv.visitLabel(continueLabel);
+                            }
+
                             @Override
                             public void visitInsn(int opcode) {
                                 if (opcode == Opcodes.RETURN) {
@@ -1894,6 +1955,150 @@ public final class AlloyTransformer implements ClassFileTransformer {
         }
     }
 
+    // ============= Handshake: ServerHandshakePacketListenerImpl =============
+
+    /**
+     * Transforms ServerHandshakePacketListenerImpl (ayj) to intercept the initial
+     * handshake packet and check for the Alloy address marker.
+     *
+     * <p>Hook: handleIntention a(Lakj;)V — calls AlloyHandshakeHook.onHandshakeReceived(this, packet)
+     * at method start. The hook parses the address field, stores verified connections,
+     * and strips the marker so vanilla MC doesn't see it.
+     */
+    private byte[] transformHandshakeHandler(byte[] classBytes) {
+        try {
+            ClassReader reader = new ClassReader(classBytes);
+            ClassWriter writer = createFrameWriter(reader);
+            ClassVisitor visitor = new ClassVisitor(Opcodes.ASM9, writer) {
+                @Override
+                public MethodVisitor visitMethod(int access, String name, String descriptor,
+                                                 String signature, String[] exceptions) {
+                    MethodVisitor mv = super.visitMethod(access, name, descriptor, signature, exceptions);
+
+                    // handleIntention: a(Lakj;)V — ClientIntentionPacket parameter
+                    if ("a".equals(name) && "(Lakj;)V".equals(descriptor)) {
+                        return new MethodVisitor(Opcodes.ASM9, mv) {
+                            @Override
+                            public void visitCode() {
+                                super.visitCode();
+                                // try { AlloyHandshakeHook.onHandshakeReceived(this, packet); }
+                                // catch (Throwable t) { /* ignore */ }
+                                Label tryStart = new Label();
+                                Label tryEnd = new Label();
+                                Label catchHandler = new Label();
+                                Label after = new Label();
+
+                                mv.visitTryCatchBlock(tryStart, tryEnd, catchHandler, "java/lang/Throwable");
+                                mv.visitLabel(tryStart);
+                                mv.visitVarInsn(Opcodes.ALOAD, 0); // this (ServerHandshakePacketListenerImpl)
+                                mv.visitVarInsn(Opcodes.ALOAD, 1); // packet (ClientIntentionPacket)
+                                mv.visitMethodInsn(Opcodes.INVOKESTATIC, HANDSHAKE_HOOK_CLASS,
+                                        "onHandshakeReceived",
+                                        "(Ljava/lang/Object;Ljava/lang/Object;)V", false);
+                                mv.visitLabel(tryEnd);
+                                mv.visitJumpInsn(Opcodes.GOTO, after);
+                                mv.visitLabel(catchHandler);
+                                mv.visitInsn(Opcodes.POP); // discard Throwable
+                                mv.visitLabel(after);
+                            }
+                        };
+                    }
+
+                    return mv;
+                }
+            };
+            reader.accept(visitor, ClassReader.SKIP_FRAMES);
+            System.out.println("[Alloy] Transformed: ServerHandshakePacketListenerImpl \u2014 handshake marker check injected");
+            return writer.toByteArray();
+        } catch (Exception e) {
+            System.err.println("[Alloy] Failed to transform ServerHandshakePacketListenerImpl: " + e.getMessage());
+            return null;
+        }
+    }
+
+    // ============= Handshake: ClientIntentionPacket (client-side) ===========
+
+    /**
+     * Transforms ClientIntentionPacket (akj) on the client side to append the Alloy
+     * address marker to the hostName field.
+     *
+     * <p>ClientIntentionPacket is a record with fields:
+     * <pre>
+     *   b = protocolVersion (int)
+     *   c = hostName (String)
+     *   d = port (int)
+     *   e = intention (ClientIntent)
+     * </pre>
+     *
+     * <p>The hostName accessor e() is used at the server side, but the field 'c' is
+     * what gets serialized into the packet via STREAM_CODEC. We modify the field value
+     * in the constructor (the record's canonical constructor) so all reads see the marker.
+     *
+     * <p>Strategy: intercept the constructor. After the super() call and field assignments,
+     * replace field 'c' with AlloyHandshakeHook.addMarkerToAddress(c).
+     */
+    private byte[] transformClientIntentionPacket(byte[] classBytes) {
+        try {
+            ClassReader reader = new ClassReader(classBytes);
+            ClassWriter writer = createFrameWriter(reader);
+            ClassVisitor visitor = new ClassVisitor(Opcodes.ASM9, writer) {
+                @Override
+                public MethodVisitor visitMethod(int access, String name, String descriptor,
+                                                 String signature, String[] exceptions) {
+                    MethodVisitor mv = super.visitMethod(access, name, descriptor, signature, exceptions);
+
+                    // Canonical constructor: <init>(ILjava/lang/String;ILClientIntent;)V
+                    // The exact descriptor includes the obfuscated ClientIntent type.
+                    // Match any constructor that takes (int, String, int, ...) pattern.
+                    if ("<init>".equals(name) && descriptor.contains("Ljava/lang/String;")) {
+                        return new MethodVisitor(Opcodes.ASM9, mv) {
+                            @Override
+                            public void visitInsn(int opcode) {
+                                // Before the constructor RETURN, modify the hostName field
+                                if (opcode == Opcodes.RETURN) {
+                                    // try { this.c = AlloyHandshakeHook.addMarkerToAddress(this.c); }
+                                    // catch (Throwable t) { /* ignore — use original address */ }
+                                    Label tryStart = new Label();
+                                    Label tryEnd = new Label();
+                                    Label catchHandler = new Label();
+                                    Label after = new Label();
+
+                                    mv.visitTryCatchBlock(tryStart, tryEnd, catchHandler, "java/lang/Throwable");
+                                    mv.visitLabel(tryStart);
+
+                                    mv.visitVarInsn(Opcodes.ALOAD, 0); // this
+                                    mv.visitVarInsn(Opcodes.ALOAD, 0); // this (for getfield)
+                                    mv.visitFieldInsn(Opcodes.GETFIELD, CLIENT_INTENTION_PACKET_CLASS,
+                                            "c", "Ljava/lang/String;"); // this.c (hostName)
+                                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, HANDSHAKE_HOOK_CLASS,
+                                            "addMarkerToAddress",
+                                            "(Ljava/lang/String;)Ljava/lang/String;", false);
+                                    mv.visitFieldInsn(Opcodes.PUTFIELD, CLIENT_INTENTION_PACKET_CLASS,
+                                            "c", "Ljava/lang/String;"); // this.c = modified
+
+                                    mv.visitLabel(tryEnd);
+                                    mv.visitJumpInsn(Opcodes.GOTO, after);
+                                    mv.visitLabel(catchHandler);
+                                    mv.visitInsn(Opcodes.POP); // discard Throwable
+                                    mv.visitLabel(after);
+                                }
+                                super.visitInsn(opcode);
+                            }
+                        };
+                    }
+
+                    return mv;
+                }
+            };
+            reader.accept(visitor, ClassReader.SKIP_FRAMES);
+            System.out.println("[Alloy] Transformed: ClientIntentionPacket \u2014 Alloy address marker injection applied");
+            return writer.toByteArray();
+        } catch (Exception e) {
+            System.err.println("[Alloy] Failed to transform ClientIntentionPacket: " + e.getMessage());
+            return null;
+        }
+    }
+
     // ============================== Utilities ================================
 
     /**
@@ -1976,28 +2181,16 @@ public final class AlloyTransformer implements ClassFileTransformer {
         return new ClassWriter(reader, ClassWriter.COMPUTE_FRAMES) {
             @Override
             protected String getCommonSuperClass(String type1, String type2) {
-                return resolveCommonSuper(type1, type2, null);
+                // NEVER use Class.forName here — it triggers recursive class loading
+                // through the javaagent transformer, which causes a native SIGSEGV in
+                // libzip on macOS ARM64 (_platform_memmove crash). This is fatal and
+                // uncatchable. Returning "java/lang/Object" is safe: the ClassReader
+                // passed to the constructor provides existing frame data, and ASM only
+                // calls this for methods we actually modify. Our injected code uses
+                // simple if-return patterns that don't create type-merge points requiring
+                // precise superclass resolution.
+                return "java/lang/Object";
             }
         };
-    }
-
-    /**
-     * Resolves the common superclass for COMPUTE_FRAMES using the transform classloader.
-     */
-    private static String resolveCommonSuper(String type1, String type2, ClassLoader transformLoader) {
-        ClassLoader cl = transformLoader != null ? transformLoader
-                : Thread.currentThread().getContextClassLoader();
-        if (cl == null) cl = ClassLoader.getSystemClassLoader();
-        try {
-            Class<?> c1 = Class.forName(type1.replace('/', '.'), false, cl);
-            Class<?> c2 = Class.forName(type2.replace('/', '.'), false, cl);
-            if (c1.isAssignableFrom(c2)) return type1;
-            if (c2.isAssignableFrom(c1)) return type2;
-            if (c1.isInterface() || c2.isInterface()) return "java/lang/Object";
-            do { c1 = c1.getSuperclass(); } while (!c1.isAssignableFrom(c2));
-            return c1.getName().replace('.', '/');
-        } catch (Exception e) {
-            return "java/lang/Object";
-        }
     }
 }

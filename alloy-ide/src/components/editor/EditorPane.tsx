@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, lazy, Suspense } from "react";
 import { Eye, Code, ServerOff } from "lucide-react";
 import { useStore } from "../../lib/store";
 import { isVisualEditorAvailable, getVisualEditorUnavailableReason } from "../../lib/environment";
@@ -8,6 +8,7 @@ import ImagePreview from "./ImagePreview";
 import MarkdownPreview from "./MarkdownPreview";
 import GuiEditor from "../gui-editor/GuiEditor";
 import AnimationEditor from "../animation/AnimationEditor";
+const BlockEditor = lazy(() => import("../block-editor/BlockEditor"));
 
 const IMAGE_EXTENSIONS = new Set([
   "png", "jpg", "jpeg", "gif", "svg", "bmp", "webp", "ico", "tga",
@@ -79,8 +80,35 @@ export default function EditorPane() {
   const ext = file.name.split(".").pop()?.toLowerCase() || "";
   const isImage = IMAGE_EXTENSIONS.has(ext);
   const isMarkdown = file.language === "markdown";
+  const isBlock = file.name.endsWith(".block.json");
   const isGui = file.name.endsWith(".gui.json");
   const isAnim = file.name.endsWith(".anim.json");
+
+  // Block visual editor
+  if (isBlock) {
+    const envAvailable = isVisualEditorAvailable(currentProject?.environment ?? null);
+    if (!envAvailable) {
+      return (
+        <VisualEditorBlocked
+          reason={getVisualEditorUnavailableReason(currentProject?.environment ?? null)}
+          fileName={file.name}
+        />
+      );
+    }
+    return (
+      <Suspense fallback={<div className="flex items-center justify-center h-full text-stone-500 text-xs">Loading Block Editor...</div>}>
+        <BlockEditor
+          key={file.path}
+          path={file.path}
+          content={file.content}
+          onSave={(content) => {
+            updateFileContent(file.path, content);
+            saveFile(file.path);
+          }}
+        />
+      </Suspense>
+    );
+  }
 
   // GUI visual editor
   if (isGui) {

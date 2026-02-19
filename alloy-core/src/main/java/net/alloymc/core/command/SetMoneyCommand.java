@@ -59,13 +59,13 @@ public class SetMoneyCommand extends Command {
 
         Player targetPlayer = target.get();
         economy.setBalance(targetPlayer.uniqueId(), amount);
-        sender.sendMessage(String.format("\u00a7aSet \u00a7f%s\u00a7a's balance to \u00a7f$%.2f",
-                targetPlayer.name(), amount));
+        sender.sendMessage("\u00a7aSet \u00a7f" + targetPlayer.name() + "\u00a7a's balance to \u00a7f"
+                + AlloyAPI.economy().formatAmount(amount));
 
         // Notify the target if they're different from the sender
         if (sender.isPlayer() && !((Player) sender).uniqueId().equals(targetPlayer.uniqueId())) {
-            targetPlayer.sendMessage(String.format(
-                    "\u00a7aYour balance has been set to \u00a7f$%.2f\u00a7a by an admin.", amount));
+            targetPlayer.sendMessage("\u00a7aYour balance has been set to \u00a7f"
+                    + AlloyAPI.economy().formatAmount(amount) + "\u00a7a by an admin.");
         }
 
         return true;

@@ -744,6 +744,21 @@ pub async fn git_commit(project_path: String, message: String) -> Result<(), Str
     Ok(())
 }
 
+#[tauri::command]
+pub async fn git_init(project_path: String) -> Result<String, String> {
+    let output = std::process::Command::new("git")
+        .args(["init"])
+        .current_dir(&project_path)
+        .output()
+        .map_err(|e| format!("git init failed: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        return Err(stderr);
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
 #[derive(serde::Serialize)]
 pub struct BlameLine {
     pub hash: String,

@@ -3,6 +3,14 @@ package net.alloymc.client.screen;
 import net.alloymc.client.render.AlloyColors;
 import net.alloymc.client.render.AlloyRenderer;
 import net.alloymc.client.ui.AlloyButton;
+import net.alloymc.client.ui.AlloyCheckbox;
+import net.alloymc.client.ui.AlloyEnergyBar;
+import net.alloymc.client.ui.AlloyListView;
+import net.alloymc.client.ui.AlloyProgressBar;
+import net.alloymc.client.ui.AlloySlider;
+import net.alloymc.client.ui.AlloyTabPanel;
+import net.alloymc.client.ui.AlloyTextArea;
+import net.alloymc.client.ui.AlloyTextInput;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -24,6 +32,14 @@ public abstract class AlloyScreen {
     protected int width;
     protected int height;
     protected final List<AlloyButton> buttons = new ArrayList<>();
+    protected final List<AlloySlider> sliders = new ArrayList<>();
+    protected final List<AlloyProgressBar> progressBars = new ArrayList<>();
+    protected final List<AlloyEnergyBar> energyBars = new ArrayList<>();
+    protected final List<AlloyTextInput> textInputs = new ArrayList<>();
+    protected final List<AlloyTextArea> textAreas = new ArrayList<>();
+    protected final List<AlloyCheckbox> checkboxes = new ArrayList<>();
+    protected final List<AlloyTabPanel> tabPanels = new ArrayList<>();
+    protected final List<AlloyListView> listViews = new ArrayList<>();
 
     protected AlloyScreen(String title) {
         this.title = title;
@@ -40,6 +56,14 @@ public abstract class AlloyScreen {
         this.width = width;
         this.height = height;
         buttons.clear();
+        sliders.clear();
+        progressBars.clear();
+        energyBars.clear();
+        textInputs.clear();
+        textAreas.clear();
+        checkboxes.clear();
+        tabPanels.clear();
+        listViews.clear();
     }
 
     /**
@@ -60,9 +84,15 @@ public abstract class AlloyScreen {
     public void render(int mouseX, int mouseY, float tickDelta) {
         renderBackground();
         renderContent(mouseX, mouseY, width, height, tickDelta);
-        for (AlloyButton button : buttons) {
-            button.render(mouseX, mouseY, tickDelta);
-        }
+        for (AlloyButton button : buttons) button.render(mouseX, mouseY, tickDelta);
+        for (AlloySlider slider : sliders) slider.render(mouseX, mouseY, tickDelta);
+        for (AlloyProgressBar bar : progressBars) bar.render(mouseX, mouseY, tickDelta);
+        for (AlloyEnergyBar bar : energyBars) bar.render(mouseX, mouseY, tickDelta);
+        for (AlloyTextInput input : textInputs) input.render(mouseX, mouseY, tickDelta);
+        for (AlloyTextArea area : textAreas) area.render(mouseX, mouseY, tickDelta);
+        for (AlloyCheckbox cb : checkboxes) cb.render(mouseX, mouseY, tickDelta);
+        for (AlloyTabPanel panel : tabPanels) panel.render(mouseX, mouseY, tickDelta);
+        for (AlloyListView list : listViews) list.render(mouseX, mouseY, tickDelta);
     }
 
     /**
@@ -96,6 +126,24 @@ public abstract class AlloyScreen {
                 return true;
             }
         }
+        for (AlloySlider slider : sliders) {
+            if (slider.mouseClicked(mouseX, mouseY, button)) return true;
+        }
+        for (AlloyTextInput input : textInputs) {
+            if (input.mouseClicked(mouseX, mouseY, button)) return true;
+        }
+        for (AlloyCheckbox cb : checkboxes) {
+            if (cb.mouseClicked(mouseX, mouseY, button)) return true;
+        }
+        for (AlloyTabPanel panel : tabPanels) {
+            if (panel.mouseClicked(mouseX, mouseY, button)) return true;
+        }
+        for (AlloyListView list : listViews) {
+            if (list.mouseClicked(mouseX, mouseY, button)) return true;
+        }
+        for (AlloyTextArea area : textAreas) {
+            if (area.mouseClicked(mouseX, mouseY, button)) return true;
+        }
         return onMouseClicked(mouseX, mouseY, button);
     }
 
@@ -116,6 +164,51 @@ public abstract class AlloyScreen {
      * @return true if the key was consumed
      */
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        for (AlloyTextInput input : textInputs) {
+            if (input.keyPressed(keyCode, scanCode, modifiers)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Handle a character typed. Routes to focused text inputs.
+     */
+    public boolean charTyped(char ch) {
+        for (AlloyTextInput input : textInputs) {
+            if (input.charTyped(ch)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Handle mouse drag. Routes to sliders.
+     */
+    public boolean mouseDragged(int mouseX, int mouseY) {
+        for (AlloySlider slider : sliders) {
+            if (slider.mouseDragged(mouseX, mouseY)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Handle mouse release. Routes to sliders.
+     */
+    public void mouseReleased() {
+        for (AlloySlider slider : sliders) {
+            slider.mouseReleased();
+        }
+    }
+
+    /**
+     * Handle mouse scroll. Routes to text areas and list views.
+     */
+    public boolean mouseScrolled(double amount) {
+        for (AlloyTextArea area : textAreas) {
+            if (area.mouseScrolled(amount)) return true;
+        }
+        for (AlloyListView list : listViews) {
+            if (list.mouseScrolled(amount)) return true;
+        }
         return false;
     }
 

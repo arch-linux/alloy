@@ -1,0 +1,20 @@
+[package]
+name = "alloy-mcp"
+version = "0.1.0"
+edition = "2021"
+description = "Standalone MCP server for Alloy IDE — full mod project control for Claude"
+
+[[bin]]
+name = "alloy-mcp"
+path = "src/main.rs"
+
+[dependencies]
+rmcp = { version = "0.15", features = ["server", "transport-io", "macros"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }
+walkdir = "2"
+regex = "1"
+toml = "0.8"
+zip = "2"

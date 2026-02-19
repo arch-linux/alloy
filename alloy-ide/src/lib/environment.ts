@@ -219,7 +219,7 @@ export function filterTemplatesForEnvironment(
 ): string[] {
   if (environment === "server") {
     // Server mods can't use GUI or animation templates
-    return templateIds.filter((id) => id !== "gui_screen" && id !== "animation");
+    return templateIds.filter((id) => id !== "gui_screen" && id !== "animation" && id !== "block_visual");
   }
   return templateIds;
 }

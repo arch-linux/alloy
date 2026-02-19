@@ -2,6 +2,7 @@ package net.alloymc.loader.agent;
 
 import net.alloymc.api.AlloyAPI;
 import net.alloymc.api.event.block.*;
+import net.alloymc.api.event.inventory.*;
 import net.alloymc.api.event.player.*;
 import net.alloymc.api.event.entity.*;
 
@@ -13,6 +14,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Collection;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Bridge between Minecraft's server-side game logic and Alloy's {@link net.alloymc.api.event.EventBus}.
@@ -59,7 +61,12 @@ public final class EventFiringHook {
                     net.alloymc.loader.impl.TickScheduler.instance();
             AlloyAPI.setScheduler(tickScheduler);
 
-            System.out.println("[Alloy] Server upgraded: ReflectiveServer + TickScheduler active");
+            // Register item, inventory, and menu factories for custom GUI support
+            AlloyAPI.setItemFactory(new ReflectiveItemFactory(minecraftServer));
+            AlloyAPI.setInventoryFactory(new ReflectiveInventoryFactory(minecraftServer));
+            AlloyAPI.setMenuFactory(new ReflectiveMenuFactory(minecraftServer));
+
+            System.out.println("[Alloy] Server upgraded: ReflectiveServer + TickScheduler + ItemFactory + InventoryFactory + MenuFactory active");
 
             // Register Alloy commands with Brigadier for tab-complete + proper execution
             registerBrigadierCommands(minecraftServer);
@@ -824,8 +831,8 @@ public final class EventFiringHook {
      */
     public static Object fireBlockPlace(Object blockItem, Object blockPlaceContext) {
         try {
-            // Extract player from context: BlockPlaceContext -> getPlayer()
-            Object mcPlayer = invokeNoArgs(blockPlaceContext, "r"); // getPlayer() -> r in UseOnContext
+            // Extract player from context: UseOnContext.getPlayer() -> o
+            Object mcPlayer = invokeNoArgs(blockPlaceContext, "o");
             if (mcPlayer == null) return null;
             // Only fire for server players
             if (!mcPlayer.getClass().getName().equals("axg")) return null;
@@ -833,12 +840,12 @@ public final class EventFiringHook {
             ReflectivePlayer player = ReflectivePlayer.wrap(mcPlayer);
             if (player == null) return null;
 
-            // Extract level from context
-            Object level = invokeNoArgs(blockPlaceContext, "a_"); // getLevel() -> a_ in UseOnContext
+            // Extract level from context: UseOnContext.getLevel() -> q
+            Object level = invokeNoArgs(blockPlaceContext, "q");
             if (level == null) return null;
 
-            // Extract block position from context: getClickedPos()
-            Object blockPos = invokeNoArgs(blockPlaceContext, "a"); // getClickedPos -> a in UseOnContext
+            // Extract block position from context: BlockPlaceContext.getClickedPos() -> a
+            Object blockPos = invokeNoArgs(blockPlaceContext, "a");
             if (blockPos == null) return null;
 
             int x = getBlockPosX(blockPos);
@@ -854,11 +861,12 @@ public final class EventFiringHook {
             AlloyAPI.eventBus().fire(event);
 
             if (event.isCancelled()) {
-                // Return InteractionResult.FAIL
+                // Return InteractionResult.FAIL — InteractionResult is a sealed class, not an enum
                 try {
                     Class<?> irClass = blockItem.getClass().getClassLoader().loadClass("cdc");
-                    Object[] constants = irClass.getEnumConstants();
-                    if (constants != null && constants.length > 3) return constants[3]; // FAIL
+                    Field failField = irClass.getDeclaredField("d"); // FAIL -> d
+                    failField.setAccessible(true);
+                    return failField.get(null);
                 } catch (Exception ignored) {}
             }
             return null;
@@ -1077,10 +1085,12 @@ public final class EventFiringHook {
             AlloyAPI.eventBus().fire(event);
 
             if (event.isCancelled()) {
+                // Return InteractionResult.FAIL — InteractionResult is a sealed class, not an enum
                 try {
                     Class<?> irClass = mcPlayer.getClass().getClassLoader().loadClass("cdc");
-                    Object[] constants = irClass.getEnumConstants();
-                    if (constants != null && constants.length > 3) return constants[3];
+                    Field failField = irClass.getDeclaredField("d"); // FAIL -> d
+                    failField.setAccessible(true);
+                    return failField.get(null);
                 } catch (Exception ignored) {}
             }
             return null;
@@ -1364,21 +1374,13 @@ public final class EventFiringHook {
         boolean cancelled = fireUseItemOn(gameMode, serverPlayer, level, itemStack, hand, hitResult);
         if (!cancelled) return null;
 
-        // Return InteractionResult.FAIL via reflection
+        // Return InteractionResult.FAIL via reflection (sealed class, not enum)
         try {
             Class<?> irClass = gameMode.getClass().getClassLoader().loadClass("cdc");
-            // InteractionResult enum: FAIL is field "d" (ordinal 3)
-            Field failField = irClass.getDeclaredField("d");
+            Field failField = irClass.getDeclaredField("d"); // FAIL -> d
             failField.setAccessible(true);
             return failField.get(null);
         } catch (Exception e) {
-            // Fallback: try to get any enum constant to avoid NPE
-            try {
-                Class<?> irClass = gameMode.getClass().getClassLoader().loadClass("cdc");
-                Object[] constants = irClass.getEnumConstants();
-                if (constants != null && constants.length > 3) return constants[3]; // FAIL
-                if (constants != null && constants.length > 0) return constants[constants.length - 1];
-            } catch (Exception ignored) {}
             return null;
         }
     }
@@ -1599,6 +1601,237 @@ public final class EventFiringHook {
             return event.isCancelled();
         } catch (Exception e) {
             return false;
+        }
+    }
+
+    // =================== Custom Inventory Tracking ===================
+
+    /**
+     * Maps player UUID → the custom inventory they currently have open.
+     * Used by container click/close handlers to determine if the event
+     * involves a custom Alloy inventory vs. a vanilla one.
+     */
+    private static final ConcurrentHashMap<UUID, ReflectiveCustomInventory> openInventories = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<UUID, ReflectiveMenuInstance> openMenus = new ConcurrentHashMap<>();
+
+    /**
+     * Registers a custom inventory as open for a player.
+     * Called from ReflectivePlayer.openInventory().
+     */
+    public static void registerOpenInventory(UUID playerId, ReflectiveCustomInventory inventory) {
+        openInventories.put(playerId, inventory);
+    }
+
+    /**
+     * Unregisters a player's custom inventory (on close).
+     */
+    public static void unregisterOpenInventory(UUID playerId) {
+        openInventories.remove(playerId);
+    }
+
+    /**
+     * Gets the custom inventory a player has open, or null if none.
+     */
+    public static ReflectiveCustomInventory getOpenInventory(UUID playerId) {
+        return openInventories.get(playerId);
+    }
+
+    /**
+     * Registers a MenuInstance as open for a player.
+     * Called from ReflectivePlayer.openMenu().
+     */
+    public static void registerMenuInstance(UUID playerId, ReflectiveMenuInstance menu) {
+        openMenus.put(playerId, menu);
+    }
+
+    /**
+     * Gets the MenuInstance a player has open, or null if none.
+     */
+    public static ReflectiveMenuInstance getOpenMenu(UUID playerId) {
+        return openMenus.get(playerId);
+    }
+
+    // =================== Container Click/Close Event Handlers ===================
+
+    /**
+     * Called from ASM hook on ServerGamePacketListenerImpl.handleContainerClick.
+     * Fires InventoryClickEvent for custom inventories.
+     *
+     * <p>Packet: ServerboundContainerClickPacket (ais)
+     * <pre>
+     *   slotNum()    -> f() returns short
+     *   buttonNum()  -> g() returns byte
+     *   clickType()  -> h() returns ClickType (dhu)
+     * </pre>
+     *
+     * @param handler the ServerGamePacketListenerImpl instance
+     * @param packet  the ServerboundContainerClickPacket instance
+     * @return true if the event was cancelled (skip vanilla handling)
+     */
+    public static boolean handleContainerClickPacket(Object handler, Object packet) {
+        try {
+            // Only process on the server thread. The packet arrives first on the Netty IO
+            // thread where chunk data (getBlockEntity etc.) is inaccessible. MC's
+            // ensureRunningOnSameThread() re-dispatches the packet to the server thread,
+            // so our hook will fire again there.
+            if (!"Server thread".equals(Thread.currentThread().getName())) {
+                return false;
+            }
+
+            // Get player from handler field 'g'
+            Object serverPlayer = getField(handler, "g");
+            if (serverPlayer == null) return false;
+
+            ReflectivePlayer player = ReflectivePlayer.wrap(serverPlayer);
+            if (player == null) return false;
+
+            // Check if player has a custom inventory open
+            ReflectiveCustomInventory customInv = openInventories.get(player.uniqueId());
+            if (customInv == null) return false;
+
+            // Extract slot number from packet: ais.f() -> short
+            int slotNum = -1;
+            try {
+                Object slotResult = invokeNoArgs(packet, "f");
+                if (slotResult instanceof Number n) slotNum = n.intValue();
+            } catch (Exception ignored) {}
+
+            // Extract button number from packet: ais.g() -> byte
+            int buttonNum = 0;
+            try {
+                Object buttonResult = invokeNoArgs(packet, "g");
+                if (buttonResult instanceof Number n) buttonNum = n.intValue();
+            } catch (Exception ignored) {}
+
+            // Extract click type from packet: ais.h() -> ClickType enum (dhu)
+            Object mcClickType = invokeNoArgs(packet, "h");
+
+            // Map MC ClickType ordinal to Alloy ClickAction
+            ClickAction action = mapClickAction(mcClickType, buttonNum);
+
+            // Get clicked item from the custom inventory (if slot is valid)
+            net.alloymc.api.inventory.ItemStack clickedItem = null;
+            if (slotNum >= 0 && slotNum < customInv.size()) {
+                clickedItem = customInv.item(slotNum);
+            }
+
+            // Check if this is a MenuLayout GUI — fire MenuClickEvent if so
+            ReflectiveMenuInstance menuInstance = openMenus.get(player.uniqueId());
+            if (menuInstance != null) {
+                // Find the matching SlotDefinition
+                net.alloymc.api.gui.SlotDefinition slotDef = null;
+                for (net.alloymc.api.gui.SlotDefinition sd : menuInstance.layout().slots()) {
+                    if (sd.index() == slotNum) {
+                        slotDef = sd;
+                        break;
+                    }
+                }
+                MenuClickEvent menuEvent = new MenuClickEvent(
+                        player, menuInstance, slotNum, slotDef, clickedItem, action);
+                AlloyAPI.eventBus().fire(menuEvent);
+                resyncContainer(serverPlayer);
+                return true;
+            }
+
+            // Fire InventoryClickEvent for simple chest GUIs
+            InventoryClickEvent event = new InventoryClickEvent(
+                    player, customInv, slotNum, clickedItem, action);
+            AlloyAPI.eventBus().fire(event);
+
+            // Always cancel container clicks on custom inventories
+            // (prevent item pickup/movement) — mods can override by uncancelling
+            // But default behavior is: custom GUIs are display-only unless mod says otherwise
+            resyncContainer(serverPlayer);
+            return true; // Always suppress vanilla handling for custom inventories
+        } catch (Exception e) {
+            // Don't crash MC on hook failure
+            return false;
+        }
+    }
+
+    /**
+     * Resyncs the player's open container to the client after cancelling a click.
+     *
+     * <p>When we suppress vanilla handling of a container click, the client has
+     * already optimistically applied the click (item on cursor). We need to tell
+     * the client to reset by calling broadcastFullState() on the container menu.
+     *
+     * <p>Mappings:
+     * <pre>
+     *   ServerPlayer.containerMenu -> cn (AbstractContainerMenu dhi)
+     *   AbstractContainerMenu.broadcastFullState() -> e()
+     * </pre>
+     */
+    private static void resyncContainer(Object serverPlayer) {
+        try {
+            Object containerMenu = getField(serverPlayer, "cn");
+            if (containerMenu != null) {
+                invokeNoArgs(containerMenu, "e"); // broadcastFullState()
+            }
+        } catch (Exception ignored) {}
+    }
+
+    /**
+     * Called from ASM hook on ServerGamePacketListenerImpl.handleContainerClose.
+     *
+     * <p>Packet: ServerboundContainerClosePacket (ait)
+     *
+     * @param handler the ServerGamePacketListenerImpl instance
+     * @param packet  the ServerboundContainerClosePacket instance
+     */
+    public static void fireContainerClose(Object handler, Object packet) {
+        try {
+            Object serverPlayer = getField(handler, "g");
+            if (serverPlayer == null) return;
+
+            ReflectivePlayer player = ReflectivePlayer.wrap(serverPlayer);
+            if (player == null) return;
+
+            ReflectiveCustomInventory customInv = openInventories.get(player.uniqueId());
+            if (customInv == null) return;
+
+            // Fire InventoryCloseEvent
+            InventoryCloseEvent event = new InventoryCloseEvent(player, customInv);
+            AlloyAPI.eventBus().fire(event);
+
+            // Unregister both custom inventory and menu instance
+            openInventories.remove(player.uniqueId());
+            openMenus.remove(player.uniqueId());
+        } catch (Exception ignored) {
+            // Don't crash MC
+        }
+    }
+
+    /**
+     * Maps a MC ClickType enum value + button number to an Alloy ClickAction.
+     *
+     * <p>MC ClickType ordinals:
+     * <pre>
+     *   0 = PICKUP      (button 0 = left, button 1 = right)
+     *   1 = QUICK_MOVE   (button 0 = shift+left, button 1 = shift+right)
+     *   2 = SWAP         (number key)
+     *   3 = CLONE        (middle click)
+     *   4 = THROW        (button 0 = drop, button 1 = ctrl+drop)
+     *   5 = QUICK_CRAFT  (drag)
+     *   6 = PICKUP_ALL   (double click)
+     * </pre>
+     */
+    private static ClickAction mapClickAction(Object mcClickType, int buttonNum) {
+        if (mcClickType == null) return ClickAction.LEFT;
+        try {
+            int ordinal = ((Enum<?>) mcClickType).ordinal();
+            return switch (ordinal) {
+                case 0 -> buttonNum == 1 ? ClickAction.RIGHT : ClickAction.LEFT;
+                case 1 -> buttonNum == 1 ? ClickAction.SHIFT_RIGHT : ClickAction.SHIFT_LEFT;
+                case 2 -> ClickAction.NUMBER_KEY;
+                case 3 -> ClickAction.MIDDLE;
+                case 4 -> buttonNum == 1 ? ClickAction.CTRL_DROP : ClickAction.DROP;
+                case 5 -> ClickAction.LEFT; // drag → map to left as closest equivalent
+                case 6 -> ClickAction.DOUBLE_CLICK;
+                default -> ClickAction.LEFT;
+            };
+        } catch (Exception e) {
+            return ClickAction.LEFT;
         }
     }
 

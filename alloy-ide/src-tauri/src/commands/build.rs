@@ -157,6 +157,223 @@ pub async fn run_gradle_task(
     Ok(result)
 }
 
+/// Validate mod environment constraints by scanning source files
+#[tauri::command]
+pub async fn validate_environment(project_path: String) -> Result<Vec<BuildError>, String> {
+    // Read alloy.mod.json to determine environment
+    let mod_json_path = std::path::Path::new(&project_path).join("alloy.mod.json");
+    if !mod_json_path.exists() {
+        return Ok(vec![]);
+    }
+
+    let mod_json = std::fs::read_to_string(&mod_json_path)
+        .map_err(|e| format!("Failed to read alloy.mod.json: {}", e))?;
+
+    let parsed: serde_json::Value = serde_json::from_str(&mod_json)
+        .map_err(|e| format!("Failed to parse alloy.mod.json: {}", e))?;
+
+    let environment = parsed
+        .get("environment")
+        .and_then(|e| e.as_str())
+        .unwrap_or("both");
+
+    if environment == "both" {
+        return Ok(vec![]); // No restrictions for universal mods
+    }
+
+    // Define forbidden imports based on environment
+    let forbidden_patterns: Vec<&str> = if environment == "server" {
+        vec![
+            "net.alloymc.api.client",
+            "net.alloymc.api.render",
+            "net.alloymc.api.gui",
+            "net.alloymc.api.hud",
+            "net.alloymc.api.particle",
+            "net.alloymc.api.texture",
+            "net.alloymc.api.model",
+            "net.alloymc.api.screen",
+            "AlloyRenderer",
+            "AlloyScreen",
+            "AlloyHud",
+            "GuiComponent",
+            "ParticleEmitter",
+        ]
+    } else {
+        // client environment
+        vec![
+            "net.alloymc.api.server",
+            "net.alloymc.api.command.server",
+            "net.alloymc.api.world.server",
+            "ServerCommandSource",
+            "DedicatedServer",
+        ]
+    };
+
+    let mut violations = Vec::new();
+
+    // Scan Java source files
+    let src_dir = std::path::Path::new(&project_path).join("src");
+    if !src_dir.exists() {
+        return Ok(vec![]);
+    }
+
+    for entry in walkdir::WalkDir::new(&src_dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        let path = entry.path();
+        if !path.is_file() || path.extension().and_then(|e| e.to_str()) != Some("java") {
+            continue;
+        }
+
+        let content = match std::fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+
+        let file_path = path.to_string_lossy().to_string();
+
+        for (line_num, line) in content.lines().enumerate() {
+            let trimmed = line.trim();
+
+            // Check import statements
+            if trimmed.starts_with("import ") {
+                for pattern in &forbidden_patterns {
+                    if trimmed.contains(pattern) {
+                        let env_label = if environment == "server" {
+                            "client-only"
+                        } else {
+                            "server-only"
+                        };
+                        violations.push(BuildError {
+                            file: file_path.clone(),
+                            line: line_num + 1,
+                            column: 0,
+                            message: format!(
+                                "Importing {} API \"{}\" in a {}-only mod",
+                                env_label, pattern, environment
+                            ),
+                            severity: "warning".to_string(),
+                        });
+                        break;
+                    }
+                }
+            }
+
+            // Check direct class references (not in import lines)
+            if !trimmed.starts_with("import ") && !trimmed.starts_with("//") && !trimmed.starts_with("*") {
+                for pattern in &forbidden_patterns {
+                    // Only check short class names (not package paths which are caught by import check)
+                    if !pattern.contains('.') && trimmed.contains(pattern) {
+                        let env_label = if environment == "server" {
+                            "client-only"
+                        } else {
+                            "server-only"
+                        };
+                        violations.push(BuildError {
+                            file: file_path.clone(),
+                            line: line_num + 1,
+                            column: 0,
+                            message: format!(
+                                "Reference to {} class \"{}\" in a {}-only mod",
+                                env_label, pattern, environment
+                            ),
+                            severity: "warning".to_string(),
+                        });
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // Scan .block.json files for block-specific validation
+    for entry in walkdir::WalkDir::new(&project_path)
+        .max_depth(3)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if !name.ends_with(".block.json") {
+            continue;
+        }
+
+        let block_content = match std::fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let block_json: serde_json::Value = match serde_json::from_str(&block_content) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        let block_name = block_json.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
+        let file_path = path.to_string_lossy().to_string();
+
+        // Check for missing textures
+        let texture_mode = block_json.get("texture_mode").and_then(|m| m.as_str()).unwrap_or("all");
+        if let Some(textures) = block_json.get("textures") {
+            if texture_mode == "all" {
+                if textures.get("all").and_then(|v| v.as_str()).is_none() {
+                    violations.push(BuildError {
+                        file: file_path.clone(),
+                        line: 0,
+                        column: 0,
+                        message: format!("Block \"{}\" has no texture assigned", block_name),
+                        severity: "warning".to_string(),
+                    });
+                }
+            } else {
+                for face in &["top", "bottom", "north", "south", "east", "west"] {
+                    if textures.get(*face).and_then(|v| v.as_str()).is_none() {
+                        violations.push(BuildError {
+                            file: file_path.clone(),
+                            line: 0,
+                            column: 0,
+                            message: format!("Block \"{}\" missing texture for {} face", block_name, face),
+                            severity: "warning".to_string(),
+                        });
+                    }
+                }
+            }
+        }
+
+        // Check GUI file exists if referenced
+        let has_gui = block_json.get("has_gui").and_then(|v| v.as_bool()).unwrap_or(false);
+        if has_gui {
+            if let Some(gui_file) = block_json.get("gui_file").and_then(|v| v.as_str()) {
+                let gui_path = path.parent().unwrap_or(std::path::Path::new(".")).join(gui_file);
+                if !gui_path.exists() {
+                    violations.push(BuildError {
+                        file: file_path.clone(),
+                        line: 0,
+                        column: 0,
+                        message: format!("Block \"{}\" references GUI file \"{}\" which does not exist", block_name, gui_file),
+                        severity: "error".to_string(),
+                    });
+                }
+            }
+
+            // Server-only mod with GUI block
+            if environment == "server" {
+                violations.push(BuildError {
+                    file: file_path.clone(),
+                    line: 0,
+                    column: 0,
+                    message: format!("Block \"{}\" has GUI enabled but mod is server-only", block_name),
+                    severity: "error".to_string(),
+                });
+            }
+        }
+    }
+
+    Ok(violations)
+}
+
 #[tauri::command]
 pub async fn list_gradle_tasks(project_path: String) -> Result<Vec<String>, String> {
     // Return common Alloy mod tasks

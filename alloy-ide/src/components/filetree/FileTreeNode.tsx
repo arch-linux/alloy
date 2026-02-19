@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { ChevronRight, ChevronDown, FilePlus, FolderPlus, Trash2, Pencil, Copy, Sparkles } from "lucide-react";
+import { ChevronRight, ChevronDown, FilePlus, FolderPlus, Trash2, Pencil, Copy, Sparkles, Bot } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
 import { useStore } from "../../lib/store";
 import { showToast } from "../ui/Toast";
 import { ALLOY_TEMPLATES, getPackageForPath } from "../../lib/templates";
@@ -83,21 +84,37 @@ export default function FileTreeNode({ entry, depth }: FileTreeNodeProps) {
         ? entry.path
         : entry.path.substring(0, entry.path.lastIndexOf("/"));
 
-      const fileName = prompt("File name:", template.defaultName);
-      if (!fileName) return;
+      // Find a unique name if the default already exists
+      let fileName = template.defaultName;
+      let counter = 1;
+      let fullPath = `${dirPath}/${fileName}`;
+      while (true) {
+        try {
+          await invoke("read_file", { path: fullPath });
+          // File exists, try next name
+          const ext = template.defaultName.includes(".")
+            ? template.defaultName.substring(template.defaultName.indexOf("."))
+            : "";
+          const base = template.defaultName.substring(0, template.defaultName.indexOf(".") >= 0 ? template.defaultName.indexOf(".") : template.defaultName.length);
+          counter++;
+          fileName = `${base}_${counter}${ext}`;
+          fullPath = `${dirPath}/${fileName}`;
+        } catch {
+          break; // File doesn't exist, use this name
+        }
+      }
 
-      const fullPath = `${dirPath}/${fileName}`;
       const className = fileName.replace(/\.(java|json)$/, "").replace(/\.[^.]+$/, "");
       const packageName = getPackageForPath(dirPath);
       const content = template.generate(className, packageName);
 
       try {
         await createFile(fullPath, content);
-        openFile(fullPath, fileName);
-        // Expand directory if collapsed
         if (entry.is_dir && !entry.expanded) {
           toggleDirectory(entry.path);
         }
+        openFile(fullPath, fileName);
+        showToast("success", `Created ${fileName}`);
       } catch (e) {
         showToast("error", `Failed to create file: ${e}`);
       }
@@ -119,6 +136,21 @@ export default function FileTreeNode({ entry, depth }: FileTreeNodeProps) {
     setRenaming(true);
     setRenameName(entry.name);
   }, [entry.name]);
+
+  const handleGenerateWithAi = useCallback(() => {
+    setContextMenu(null);
+    const dirPath = entry.is_dir ? entry.path : entry.path.substring(0, entry.path.lastIndexOf("/"));
+    const fileName = window.prompt("File name to generate (e.g., MyBlock.java):");
+    if (!fileName?.trim()) return;
+    const description = window.prompt(`Describe what ${fileName} should contain:`);
+    if (!description?.trim()) return;
+
+    const state = useStore.getState();
+    state.setSidebarPanel("ai");
+    state.sendMessage(
+      `Create a new file at ${dirPath}/${fileName.trim()} with the following:\n\n${description.trim()}\n\nPlease generate the file content and create it.`,
+    );
+  }, [entry]);
 
   const submitNewItem = useCallback(async () => {
     if (!newItemName.trim()) {
@@ -262,10 +294,10 @@ export default function FileTreeNode({ entry, depth }: FileTreeNodeProps) {
       {contextMenu && (
         <div
           ref={menuRef}
-          className="fixed z-50 min-w-[160px] rounded-md border border-obsidian-600 bg-obsidian-800 py-1 shadow-xl"
+          className="fixed z-50 min-w-[160px] max-h-[calc(100vh-16px)] overflow-y-auto rounded-md border border-obsidian-600 bg-obsidian-800 py-1 shadow-xl"
           style={{
             left: Math.min(contextMenu.x, window.innerWidth - 180),
-            top: Math.min(contextMenu.y, window.innerHeight - 180),
+            top: Math.min(contextMenu.y, window.innerHeight - 300),
           }}
         >
           {entry.is_dir && (
@@ -297,7 +329,11 @@ export default function FileTreeNode({ entry, depth }: FileTreeNodeProps) {
                 </button>
                 {showTemplates && (
                   <div
-                    className="absolute left-full top-0 z-50 min-w-[200px] rounded-md border border-obsidian-600 bg-obsidian-800 py-1 shadow-xl ml-0.5"
+                    className="fixed z-[60] min-w-[200px] max-h-[min(400px,calc(100vh-32px))] overflow-y-auto rounded-md border border-obsidian-600 bg-obsidian-800 py-1 shadow-xl"
+                    style={{
+                      left: Math.min((contextMenu?.x ?? 0) + 160, window.innerWidth - 220),
+                      top: Math.min(contextMenu?.y ?? 0, window.innerHeight - 400),
+                    }}
                     onMouseLeave={() => setShowTemplates(false)}
                   >
                     {ALLOY_TEMPLATES
@@ -324,6 +360,13 @@ export default function FileTreeNode({ entry, depth }: FileTreeNodeProps) {
                   </div>
                 )}
               </div>
+              <button
+                onClick={handleGenerateWithAi}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-ember hover:bg-ember/10 transition-colors"
+              >
+                <Bot size={13} />
+                Generate with AI
+              </button>
               <div className="my-1 border-t border-obsidian-600" />
             </>
           )}

@@ -140,7 +140,23 @@ export default function TerminalComponent() {
     };
     setTabs((prev) => [...prev, newTab]);
     setActiveTab(newTab.id);
+    return newTab.id;
   }, []);
+
+  // Listen for "run command in terminal" events from the store
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const command = (e as CustomEvent).detail?.command;
+      if (!command) return;
+      // Send the command to the active terminal
+      // Small delay to ensure terminal is focused and ready
+      setTimeout(() => {
+        invoke("terminal_write", { id: activeTab, data: command + "\n" }).catch(() => {});
+      }, 100);
+    };
+    window.addEventListener("terminal:run-command", handler);
+    return () => window.removeEventListener("terminal:run-command", handler);
+  }, [activeTab]);
 
   const closeTerminal = useCallback(
     (id: string) => {

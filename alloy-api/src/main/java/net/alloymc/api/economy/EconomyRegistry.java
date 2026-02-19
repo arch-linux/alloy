@@ -1,21 +1,18 @@
 package net.alloymc.api.economy;
 
 /**
- * Manages the active {@link EconomyProvider}.
+ * Manages the active {@link EconomyProvider} and economy display settings.
  *
  * <p>Only one provider is active at a time. Any mod can replace the active
- * provider by calling {@link #setProvider(EconomyProvider)}. The previous
- * provider is cleanly shut down via {@code onDisable()} before the new one
- * is activated via {@code onEnable()}.
+ * provider by calling {@link #setProvider(EconomyProvider)}.
  *
- * <p>The built-in {@code alloy-core} mod registers a file-based provider
- * by default. Third-party mods (e.g., a MySQL/Redis economy) can override
- * it — all commands that use the economy API will automatically use the
- * new provider.
+ * <p>The currency symbol defaults to "$" but can be overridden by economy
+ * mods (e.g., DilithiumEconomy sets it to "Ð").
  */
 public class EconomyRegistry {
 
     private volatile EconomyProvider provider;
+    private volatile String currencySymbol = "$";
 
     /**
      * Returns the active economy provider, or null if none is registered.
@@ -32,20 +29,34 @@ public class EconomyRegistry {
     }
 
     /**
+     * Returns the currency symbol used for display (default: "$").
+     * Economy mods can override this via {@link #setCurrencySymbol(String)}.
+     */
+    public String currencySymbol() {
+        return currencySymbol;
+    }
+
+    /**
+     * Sets the currency symbol for display purposes.
+     * Called by economy mods to match their currency (e.g., "Ð" for Dilithium).
+     *
+     * @param symbol the currency symbol string
+     */
+    public void setCurrencySymbol(String symbol) {
+        this.currencySymbol = symbol;
+        System.out.println("[Alloy] Currency symbol set to: " + symbol);
+    }
+
+    /**
+     * Formats an amount with the currency symbol.
+     * E.g., formatAmount(10.50) → "Ð10.50" or "$10.50"
+     */
+    public String formatAmount(double amount) {
+        return currencySymbol + String.format("%.2f", amount);
+    }
+
+    /**
      * Replaces the active economy provider.
-     *
-     * <p>Lifecycle:
-     * <ol>
-     *   <li>If a provider is currently active, its {@code onDisable()} is called</li>
-     *   <li>The new provider becomes active</li>
-     *   <li>The new provider's {@code onEnable()} is called</li>
-     * </ol>
-     *
-     * <p>All existing code that calls {@code AlloyAPI.economy().provider()} will
-     * immediately see the new provider. No re-registration of commands or
-     * listeners is needed.
-     *
-     * @param provider the new economy provider, or null to disable economy
      */
     public void setProvider(EconomyProvider provider) {
         EconomyProvider old = this.provider;

@@ -30,6 +30,11 @@ pub fn run() {
             // GUI/Animation code generation
             commands::gui::generate_gui_code,
             commands::gui::generate_anim_code,
+            // Block editor commands
+            commands::block::validate_block_name,
+            commands::block::create_block_from_wizard,
+            commands::block::generate_block_code,
+            commands::block::validate_block,
             // Workspace state persistence
             commands::workspace::save_workspace_state,
             commands::workspace::load_workspace_state,
@@ -49,6 +54,7 @@ pub fn run() {
             commands::filesystem::git_unstage,
             commands::filesystem::git_discard,
             commands::filesystem::git_commit,
+            commands::filesystem::git_init,
             commands::filesystem::git_show_file,
             commands::filesystem::git_blame_file,
             commands::filesystem::git_push,
@@ -65,11 +71,16 @@ pub fn run() {
             // Build commands
             commands::build::run_gradle_task,
             commands::build::list_gradle_tasks,
+            commands::build::validate_environment,
             // Modpack commands
             commands::modpack::load_modpack_manifest,
             commands::modpack::save_modpack_manifest,
             commands::modpack::add_mod_from_jar,
             commands::modpack::remove_mod_from_pack,
+            commands::modpack::check_modpack_conflicts,
+            commands::modpack::export_modpack,
+            commands::modpack::read_mod_config,
+            commands::modpack::save_mod_config,
             // AI commands
             commands::ai::ai_send_message,
             commands::ai::ai_get_history,

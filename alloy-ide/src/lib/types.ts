@@ -196,6 +196,11 @@ export interface AnimationProject {
 
 // Modpack types
 
+export interface ModDependency {
+  mod_id: string;
+  version_constraint: string;
+}
+
 export interface ModpackMod {
   id: string;
   name: string;
@@ -205,6 +210,7 @@ export interface ModpackMod {
   source_path: string | null;
   enabled: boolean;
   description: string | null;
+  dependencies: ModDependency[];
 }
 
 export interface ModpackManifest {
@@ -213,6 +219,60 @@ export interface ModpackManifest {
   minecraft_version: string;
   alloy_version: string;
   mods: ModpackMod[];
+}
+
+export interface ModConflict {
+  kind: "missing_dependency" | "version_mismatch" | "environment_conflict" | "duplicate_id";
+  mod_id: string;
+  mod_name: string;
+  details: string;
+  affected_mods: string[];
+  suggestion: string | null;
+}
+
+// Block Editor types
+
+export type BlockFace = "top" | "bottom" | "north" | "south" | "east" | "west";
+
+export type BlockTextureMode = "all" | "per_face";
+
+export type BlockToolType = "pickaxe" | "axe" | "shovel" | "hoe" | "sword" | "none";
+
+export interface BlockTextures {
+  all: string | null;
+  top: string | null;
+  bottom: string | null;
+  north: string | null;
+  south: string | null;
+  east: string | null;
+  west: string | null;
+}
+
+export interface BlockProperties {
+  hardness: number;
+  resistance: number;
+  requires_tool: boolean;
+  tool_type: BlockToolType;
+  tool_level: number;
+  light_level: number;
+  is_transparent: boolean;
+  has_gravity: boolean;
+  flammable: boolean;
+  slipperiness: number;
+}
+
+export interface BlockProject {
+  name: string;
+  display_name: string;
+  mod_id: string;
+  texture_mode: BlockTextureMode;
+  textures: BlockTextures;
+  properties: BlockProperties;
+  has_gui: boolean;
+  gui_file: string | null;
+  has_block_entity: boolean;
+  custom_code: string | null;
+  code_overrides: Record<string, string>;
 }
 
 // Editor settings

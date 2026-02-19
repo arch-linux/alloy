@@ -10,8 +10,9 @@ import {
   Code,
   Eye,
   Save,
-  Maximize2,
+  FileOutput,
 } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
 import { useStore } from "../../lib/store";
 import { showToast } from "../ui/Toast";
 import type { GuiElement, GuiProject, GuiWidgetType } from "../../lib/types";
@@ -60,7 +61,9 @@ export default function GuiEditor({ path, content, onSave }: Props) {
   const dirty = useRef(false);
 
   const selected = project.elements.find((e) => e.id === selectedId) || null;
-  const modId = useStore((s) => s.currentProject)?.name?.toLowerCase().replace(/[^a-z0-9]/g, "") || "mymod";
+  const currentProject = useStore((s) => s.currentProject);
+  const openFile = useStore((s) => s.openFile);
+  const modId = currentProject?.name?.toLowerCase().replace(/[^a-z0-9]/g, "") || "mymod";
 
   // Push to undo stack before mutation
   const pushUndo = useCallback(() => {
@@ -177,6 +180,46 @@ export default function GuiEditor({ path, content, onSave }: Props) {
     showToast("success", "GUI saved");
   }, [project, onSave]);
 
+  // Export to Java code
+  const handleExport = useCallback(async () => {
+    if (!currentProject) {
+      showToast("error", "No project open");
+      return;
+    }
+    // Save the GUI JSON first
+    const json = JSON.stringify(project, null, 2);
+    onSave(json);
+
+    // Write the JSON to disk so generate_gui_code can read it
+    try {
+      await invoke("write_file", { path, content: json });
+    } catch (e) {
+      showToast("error", `Failed to save GUI file: ${e}`);
+      return;
+    }
+
+    // Determine package name from project path
+    const packageName = currentProject.name
+      ? `com.${currentProject.name.toLowerCase().replace(/[^a-z0-9]/g, "")}`
+      : "com.example";
+
+    try {
+      const result = await invoke<{ java_path: string; java_code: string }>("generate_gui_code", {
+        args: {
+          gui_path: path,
+          project_path: currentProject.path,
+          mod_id: modId,
+          package_name: packageName,
+        },
+      });
+      showToast("success", "Java code exported");
+      const fileName = result.java_path.split("/").pop() || "Screen.java";
+      openFile(result.java_path, fileName);
+    } catch (e) {
+      showToast("error", `Export failed: ${e}`);
+    }
+  }, [project, currentProject, modId, path, onSave, openFile]);
+
   return (
     <div className="flex h-full w-full bg-obsidian-950">
       {/* Left: Widget Palette */}
@@ -212,6 +255,11 @@ export default function GuiEditor({ path, content, onSave }: Props) {
             icon={<Save size={13} />}
             title="Save"
             onClick={handleSave}
+          />
+          <ToolbarButton
+            icon={<FileOutput size={13} />}
+            title="Export to Java"
+            onClick={handleExport}
           />
         </div>
 

@@ -1,6 +1,6 @@
 import {
   Folder, FolderOpen, File, FileCode, FileJson, FileText, Image,
-  FileType, Settings, Shield, Lock, Hash, Package, Database, Cpu
+  FileType, Settings, Shield, Lock, Hash, Package, Database, Cpu, Box
 } from "lucide-react";
 
 interface FileIconProps {
@@ -30,6 +30,9 @@ export default function FileIcon({ isDir, extension, expanded, name }: FileIconP
 
   // Special file names
   const lowerName = name?.toLowerCase() || "";
+  if (lowerName.endsWith(".block.json")) {
+    return <Box size={14} className="text-ember shrink-0" />;
+  }
   if (lowerName === "alloy.mod.json" || lowerName === "alloy.pack.toml") {
     return <Shield size={14} className="text-ember shrink-0" />;
   }

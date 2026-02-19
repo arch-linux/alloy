@@ -245,4 +245,32 @@ public class ${className} {
       2,
     ),
   },
+  {
+    id: "block_visual",
+    label: "Block (Visual Editor)",
+    description: "Block definition with visual editor (.block.json)",
+    defaultName: "my_block.block.json",
+    generate: (name) => JSON.stringify(
+      {
+        name: name.replace(".block.json", ""),
+        display_name: name.replace(".block.json", "").split("_").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" "),
+        mod_id: "mymod",
+        texture_mode: "all",
+        textures: { all: null, top: null, bottom: null, north: null, south: null, east: null, west: null },
+        properties: {
+          hardness: 3.0, resistance: 6.0,
+          requires_tool: true, tool_type: "pickaxe", tool_level: 1,
+          light_level: 0, is_transparent: false,
+          has_gravity: false, flammable: false, slipperiness: 0.6,
+        },
+        has_gui: false,
+        gui_file: null,
+        has_block_entity: false,
+        custom_code: null,
+        code_overrides: {},
+      },
+      null,
+      2,
+    ),
+  },
 ];

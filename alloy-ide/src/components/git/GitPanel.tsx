@@ -214,20 +214,54 @@ export default function GitPanel() {
     );
   }
 
+  const handleInit = async () => {
+    if (!currentProject) return;
+    setLoading(true);
+    try {
+      await invoke<string>("git_init", { projectPath: currentProject.path });
+      showToast("success", "Initialized git repository");
+      await refresh();
+    } catch (err) {
+      showToast("error", `Failed to initialize: ${err}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (error) {
+    const isNotRepo = error.includes("Not a git") || error.includes("git not found") || error.includes("not a git");
     return (
-      <div className="flex flex-col items-center gap-2 p-4">
-        <div className="text-stone-500 text-xs text-center">
-          {error.includes("Not a git") || error.includes("git not found")
-            ? "Not a git repository"
-            : "Failed to get git status"}
+      <div className="flex flex-col items-center gap-3 p-6">
+        <GitBranch size={32} className="text-stone-600" />
+        <div className="text-stone-400 text-xs text-center font-medium">
+          {isNotRepo ? "No Source Control" : "Failed to get git status"}
         </div>
-        <button
-          onClick={refresh}
-          className="text-[10px] text-stone-400 hover:text-stone-200 flex items-center gap-1"
-        >
-          <RefreshCw size={10} /> Retry
-        </button>
+        {isNotRepo ? (
+          <>
+            <p className="text-[11px] text-stone-500 text-center leading-relaxed max-w-[200px]">
+              This project is not tracked by git. Initialize a repository to start tracking changes.
+            </p>
+            <button
+              onClick={handleInit}
+              disabled={loading}
+              className="flex items-center gap-1.5 px-4 py-1.5 rounded-md text-[11px] font-medium bg-ember text-obsidian-950 hover:bg-ember-light transition-colors disabled:opacity-50"
+            >
+              {loading ? (
+                <RefreshCw size={12} className="animate-spin" />
+              ) : (
+                <Plus size={12} />
+              )}
+              Initialize Repository
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={refresh}
+            className="text-[10px] text-stone-400 hover:text-stone-200 flex items-center gap-1"
+          >
+            <RefreshCw size={10} /> Retry
+          </button>
+        )}
       </div>
     );
   }

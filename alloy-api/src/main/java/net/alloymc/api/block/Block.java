@@ -1,8 +1,9 @@
 package net.alloymc.api.block;
 
+import net.alloymc.api.inventory.Inventory;
+import net.alloymc.api.inventory.Material;
 import net.alloymc.api.world.Location;
 import net.alloymc.api.world.World;
-import net.alloymc.api.inventory.Material;
 
 /**
  * Represents a block in a world at a specific position.
@@ -40,4 +41,15 @@ public interface Block {
     boolean isLiquid();
 
     boolean isSolid();
+
+    /**
+     * Returns this block's inventory, if it has one.
+     *
+     * <p>Blocks like chests, furnaces, hoppers, dispensers, and barrels
+     * have inventories that can be read and modified. Returns {@code null}
+     * for blocks without an inventory (e.g., stone, dirt).
+     *
+     * @return the block's inventory, or null if the block has no container
+     */
+    Inventory inventory();
 }

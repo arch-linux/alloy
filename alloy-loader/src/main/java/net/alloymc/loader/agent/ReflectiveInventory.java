@@ -63,8 +63,16 @@ public final class ReflectiveInventory implements Inventory {
     @Override
     public void setItem(int slot, ItemStack item) {
         try {
-            Object mcItem = (item instanceof ReflectiveItemStack ris) ? ris.handle() : null;
-            if (mcItem == null) return;
+            Object mcItem;
+            if (item instanceof ReflectiveItemStack ris) {
+                mcItem = ris.handle();
+            } else {
+                // null or non-reflective → use ItemStack.EMPTY (dlt.l)
+                Class<?> itemStackClass = handle.getClass().getClassLoader().loadClass("dlt");
+                java.lang.reflect.Field emptyField = itemStackClass.getDeclaredField("l");
+                emptyField.setAccessible(true);
+                mcItem = emptyField.get(null);
+            }
 
             for (Method m : handle.getClass().getMethods()) {
                 if (m.getName().equals("a") && m.getParameterCount() == 2

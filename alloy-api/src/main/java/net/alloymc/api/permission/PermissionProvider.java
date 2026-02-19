@@ -30,6 +30,17 @@ public interface PermissionProvider {
     boolean isOp(UUID playerId);
 
     /**
+     * Sets the operator status for a player.
+     *
+     * @param playerId   the player's UUID
+     * @param playerName the player's name
+     * @param op         true to grant operator, false to revoke
+     */
+    default void setOp(UUID playerId, String playerName, boolean op) {
+        // No-op by default
+    }
+
+    /**
      * Called when this provider becomes the active provider.
      */
     default void onEnable() {}

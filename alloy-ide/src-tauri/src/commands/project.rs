@@ -1,10 +1,27 @@
 use crate::state::{AppState, ProjectInfo, ProjectType, RecentProject};
 use serde::Deserialize;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::State;
+
+/// Write the current project info to ~/.alloy-ide/current-project.json
+/// so the standalone MCP server can pick it up.
+fn write_current_project_file(info: &ProjectInfo) {
+    let Some(home) = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+    else {
+        return;
+    };
+    let dir = home.join(".alloy-ide");
+    let _ = fs::create_dir_all(&dir);
+    let file = dir.join("current-project.json");
+    if let Ok(json) = serde_json::to_string_pretty(info) {
+        let _ = fs::write(&file, json);
+    }
+}
 
 #[tauri::command]
 pub async fn open_project(path: String, state: State<'_, Arc<AppState>>) -> Result<ProjectInfo, String> {
@@ -53,6 +70,9 @@ pub async fn open_project(path: String, state: State<'_, Arc<AppState>>) -> Resu
         let mut current = state.current_project.lock().map_err(|e| e.to_string())?;
         *current = Some(info.clone());
     }
+
+    // Write shared file for MCP server sync
+    write_current_project_file(&info);
 
     // Add to recent projects
     {
@@ -127,6 +147,9 @@ pub async fn create_project(args: CreateProjectArgs, state: State<'_, Arc<AppSta
         let mut current = state.current_project.lock().map_err(|e| e.to_string())?;
         *current = Some(info.clone());
     }
+
+    // Write shared file for MCP server sync
+    write_current_project_file(&info);
 
     {
         let mut recents = state.recent_projects.lock().map_err(|e| e.to_string())?;

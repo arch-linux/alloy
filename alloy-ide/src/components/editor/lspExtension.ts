@@ -2,8 +2,7 @@ import { EditorView, hoverTooltip, keymap, showTooltip } from "@codemirror/view"
 import type { Tooltip } from "@codemirror/view";
 import { StateField, StateEffect } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
-import { autocompletion } from "@codemirror/autocomplete";
-import type { CompletionContext, CompletionResult } from "@codemirror/autocomplete";
+import type { CompletionContext, CompletionResult, CompletionSource } from "@codemirror/autocomplete";
 import { setDiagnostics } from "@codemirror/lint";
 import type { Diagnostic } from "@codemirror/lint";
 import {
@@ -66,38 +65,23 @@ function getVersion(path: string): number {
 }
 
 /**
- * Creates a CodeMirror extension that integrates with the LSP backend.
- * Provides: autocompletion, hover tooltips, diagnostics, go-to-definition.
+ * Creates a completion source for the LSP backend.
  */
-export function lspExtension(filePath: string): Extension {
-  // Debounce timer for didChange notifications
-  let changeTimer: ReturnType<typeof setTimeout> | null = null;
-  let lastContent = "";
-
-  // Completion source that queries the LSP backend
-  const completionSource = async (
-    context: CompletionContext
-  ): Promise<CompletionResult | null> => {
-    // Only trigger on explicit activation or after typing identifier chars
+export function createLspCompletionSource(filePath: string): CompletionSource {
+  return async (context: CompletionContext): Promise<CompletionResult | null> => {
     if (!context.explicit && !context.matchBefore(/\w+/)) {
       return null;
     }
 
     const pos = context.pos;
     const line = context.state.doc.lineAt(pos);
-    const lspLine = line.number - 1; // LSP uses 0-based lines
-    const lspChar = pos - line.from; // 0-based character offset
+    const lspLine = line.number - 1;
+    const lspChar = pos - line.from;
 
     try {
-      const items: LspCompletionItem[] = await lspCompletion(
-        filePath,
-        lspLine,
-        lspChar
-      );
-
+      const items: LspCompletionItem[] = await lspCompletion(filePath, lspLine, lspChar);
       if (items.length === 0) return null;
 
-      // Find the word start for the "from" position
       const word = context.matchBefore(/[\w.]+/);
       const from = word ? word.from : pos;
 
@@ -108,15 +92,24 @@ export function lspExtension(filePath: string): Extension {
           type: mapCompletionKind(item.kind),
           detail: item.detail || undefined,
           apply: item.insert_text || item.label,
-          boost: item.sort_text
-            ? 100 - parseInt(item.sort_text, 10)
-            : undefined,
+          boost: item.sort_text ? 100 - parseInt(item.sort_text, 10) : undefined,
         })),
       };
     } catch {
       return null;
     }
   };
+}
+
+/**
+ * Creates a CodeMirror extension that integrates with the LSP backend.
+ * Provides: hover tooltips, diagnostics, go-to-definition, signature help.
+ * NOTE: Autocompletion is NOT included — use createLspCompletionSource() separately.
+ */
+export function lspExtension(filePath: string): Extension {
+  // Debounce timer for didChange notifications
+  let changeTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastContent = "";
 
   // Hover tooltip provider
   const hoverProvider = hoverTooltip(
@@ -370,11 +363,6 @@ export function lspExtension(filePath: string): Extension {
   });
 
   return [
-    autocompletion({
-      override: [completionSource],
-      activateOnTyping: true,
-      maxRenderedOptions: 30,
-    }),
     hoverProvider,
     definitionKeymap,
     ctrlClickHandler,

@@ -3,6 +3,9 @@ package net.alloymc.api;
 import net.alloymc.api.command.CommandRegistry;
 import net.alloymc.api.economy.EconomyRegistry;
 import net.alloymc.api.event.EventBus;
+import net.alloymc.api.gui.MenuFactory;
+import net.alloymc.api.inventory.InventoryFactory;
+import net.alloymc.api.inventory.ItemFactory;
 import net.alloymc.api.permission.PermissionRegistry;
 import net.alloymc.api.scheduler.Scheduler;
 
@@ -18,6 +21,9 @@ public final class AlloyAPI {
     private static PermissionRegistry permissionRegistry;
     private static EconomyRegistry economyRegistry;
     private static Scheduler scheduler;
+    private static ItemFactory itemFactory;
+    private static InventoryFactory inventoryFactory;
+    private static MenuFactory menuFactory;
     private static LaunchEnvironment environment = LaunchEnvironment.CLIENT;
 
     private AlloyAPI() {}
@@ -84,6 +90,51 @@ public final class AlloyAPI {
         AlloyAPI.economyRegistry = new EconomyRegistry();
         AlloyAPI.scheduler = scheduler;
         AlloyAPI.environment = environment;
+    }
+
+    /**
+     * Returns the item factory used to create ItemStacks from scratch.
+     */
+    public static ItemFactory itemFactory() {
+        if (itemFactory == null) throw new IllegalStateException("ItemFactory not yet initialized");
+        return itemFactory;
+    }
+
+    /**
+     * Returns the inventory factory used to create CustomInventory instances.
+     */
+    public static InventoryFactory inventoryFactory() {
+        if (inventoryFactory == null) throw new IllegalStateException("InventoryFactory not yet initialized");
+        return inventoryFactory;
+    }
+
+    /**
+     * Sets the item factory. Called by the loader during server bootstrap. Not for mod use.
+     */
+    public static void setItemFactory(ItemFactory factory) {
+        AlloyAPI.itemFactory = factory;
+    }
+
+    /**
+     * Sets the inventory factory. Called by the loader during server bootstrap. Not for mod use.
+     */
+    public static void setInventoryFactory(InventoryFactory factory) {
+        AlloyAPI.inventoryFactory = factory;
+    }
+
+    /**
+     * Returns the menu factory used to create MenuLayout builders.
+     */
+    public static MenuFactory menuFactory() {
+        if (menuFactory == null) throw new IllegalStateException("MenuFactory not yet initialized");
+        return menuFactory;
+    }
+
+    /**
+     * Sets the menu factory. Called by the loader during server bootstrap. Not for mod use.
+     */
+    public static void setMenuFactory(MenuFactory factory) {
+        AlloyAPI.menuFactory = factory;
     }
 
     /**

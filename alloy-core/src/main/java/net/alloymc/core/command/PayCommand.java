@@ -68,17 +68,20 @@ public class PayCommand extends Command {
             return true;
         }
 
+        String fmt = AlloyAPI.economy().formatAmount(amount);
         boolean success = economy.transfer(player.uniqueId(), targetPlayer.uniqueId(), amount);
         if (!success) {
-            sender.sendMessage(String.format("\u00a7cInsufficient funds. Your balance: $%.2f",
-                    economy.getBalance(player.uniqueId())));
+            sender.sendMessage("\u00a7cInsufficient funds. Your balance: "
+                    + AlloyAPI.economy().formatAmount(economy.getBalance(player.uniqueId())));
             return true;
         }
 
-        sender.sendMessage(String.format("\u00a7aPaid \u00a7f$%.2f\u00a7a to \u00a7f%s\u00a7a. New balance: \u00a7f$%.2f",
-                amount, targetPlayer.name(), economy.getBalance(player.uniqueId())));
-        targetPlayer.sendMessage(String.format("\u00a7aReceived \u00a7f$%.2f\u00a7a from \u00a7f%s\u00a7a. New balance: \u00a7f$%.2f",
-                amount, player.name(), economy.getBalance(targetPlayer.uniqueId())));
+        sender.sendMessage("\u00a7aPaid \u00a7f" + fmt + "\u00a7a to \u00a7f" + targetPlayer.name()
+                + "\u00a7a. New balance: \u00a7f"
+                + AlloyAPI.economy().formatAmount(economy.getBalance(player.uniqueId())));
+        targetPlayer.sendMessage("\u00a7aReceived \u00a7f" + fmt + "\u00a7a from \u00a7f" + player.name()
+                + "\u00a7a. New balance: \u00a7f"
+                + AlloyAPI.economy().formatAmount(economy.getBalance(targetPlayer.uniqueId())));
 
         return true;
     }

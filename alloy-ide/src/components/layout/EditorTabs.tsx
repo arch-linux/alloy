@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { X, Pin, ChevronLeft, ChevronRight } from "lucide-react";
+import { X, Pin, ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react";
 import { useStore } from "../../lib/store";
 import TabContextMenu from "./TabContextMenu";
 
@@ -136,8 +136,12 @@ export default function EditorTabs() {
             {isPinned && (
               <Pin size={11} className="text-ember shrink-0 -rotate-45" />
             )}
+            {/* Externally modified indicator */}
+            {file.externallyModified && (
+              <AlertTriangle size={11} className="text-yellow-400 shrink-0" />
+            )}
             {/* Dirty indicator */}
-            {file.dirty && !isPinned && (
+            {file.dirty && !file.externallyModified && !isPinned && (
               <span className="h-2 w-2 rounded-full bg-ember shrink-0" />
             )}
             {/* File name */}

@@ -35,7 +35,7 @@ public class BalanceCommand extends Command {
             }
             Player player = (Player) sender;
             double balance = economy.getBalance(player.uniqueId());
-            sender.sendMessage(String.format("\u00a7aBalance: \u00a7f$%.2f", balance));
+            sender.sendMessage("\u00a7aBalance: \u00a7f" + AlloyAPI.economy().formatAmount(balance));
         } else {
             // Check another player's balance (op only from players, always allowed from console)
             if (sender.isPlayer() && !sender.hasPermission("alloy.command.setmoney")) {
@@ -50,8 +50,8 @@ public class BalanceCommand extends Command {
             }
             Player targetPlayer = target.get();
             double balance = economy.getBalance(targetPlayer.uniqueId());
-            sender.sendMessage(String.format("\u00a7a%s's balance: \u00a7f$%.2f",
-                    targetPlayer.name(), balance));
+            sender.sendMessage("\u00a7a" + targetPlayer.name() + "'s balance: \u00a7f"
+                    + AlloyAPI.economy().formatAmount(balance));
         }
         return true;
     }

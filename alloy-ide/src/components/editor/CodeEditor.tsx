@@ -21,7 +21,8 @@ import { stickyScroll } from "./stickyScroll";
 import { alloySnippets } from "./alloySnippets";
 import { foldRegions } from "./foldRegions";
 import { gitBlame } from "./gitBlame";
-import { lspExtension, setupLspDiagnostics } from "./lspExtension";
+import { lspExtension, createLspCompletionSource, setupLspDiagnostics } from "./lspExtension";
+import { autocompletion } from "@codemirror/autocomplete";
 import { lspDidOpen } from "../../lib/lsp";
 import Minimap from "./Minimap";
 import { useStore } from "../../lib/store";
@@ -150,8 +151,16 @@ export default function CodeEditor({
       gitGutter(path, currentProject?.path ?? null),
       // Rainbow bracket colorization
       bracketColors(),
-      // Sticky scroll, snippets, and fold regions for Java files
-      ...(language === "java" ? [stickyScroll(), alloySnippets(), foldRegions()] : []),
+      // Sticky scroll and fold regions for Java files
+      ...(language === "java" ? [stickyScroll(), foldRegions()] : []),
+      // Combined autocompletion: LSP + snippets for Java, default for others
+      ...(language === "java"
+        ? [autocompletion({
+            override: [createLspCompletionSource(path), alloySnippets()],
+            activateOnTyping: true,
+            maxRenderedOptions: 30,
+          })]
+        : []),
       // Git blame annotations
       gitBlame(path, currentProject?.path ?? null),
       // LSP integration for Java files

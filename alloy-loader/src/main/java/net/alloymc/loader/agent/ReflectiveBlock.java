@@ -2,6 +2,7 @@ package net.alloymc.loader.agent;
 
 import net.alloymc.api.block.Block;
 import net.alloymc.api.block.BlockFace;
+import net.alloymc.api.inventory.Inventory;
 import net.alloymc.api.inventory.Material;
 import net.alloymc.api.world.World;
 
@@ -167,6 +168,33 @@ public final class ReflectiveBlock implements Block {
     @Override
     public boolean isSolid() {
         return type().isSolid();
+    }
+
+    @Override
+    public Inventory inventory() {
+        if (level == null || blockPos == null) return null;
+        try {
+            // Level.getBlockEntity(BlockPos) → c_(BlockPos)
+            Object blockEntity = null;
+            for (Method m : level.getClass().getMethods()) {
+                if (m.getName().equals("c_") && m.getParameterCount() == 1
+                        && m.getParameterTypes()[0].isInstance(blockPos)) {
+                    m.setAccessible(true);
+                    blockEntity = m.invoke(level, blockPos);
+                    break;
+                }
+            }
+            if (blockEntity == null) return null;
+
+            // Check if the block entity implements Container (ccv)
+            ClassLoader cl = blockEntity.getClass().getClassLoader();
+            Class<?> containerClass = cl.loadClass("ccv");
+            if (!containerClass.isInstance(blockEntity)) return null;
+
+            return ReflectiveInventory.wrap(blockEntity);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     // =================== Reflection helpers ===================

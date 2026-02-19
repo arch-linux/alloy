@@ -1,8 +1,16 @@
 package net.alloymc.core.permission;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import net.alloymc.api.AlloyAPI;
 import net.alloymc.api.permission.PermissionProvider;
+import net.alloymc.api.permission.PermissionRegistry;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -11,31 +19,43 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * File-based permission provider backed by {@code permissions.json}.
  *
  * <p>Evaluation order:
  * <ol>
- *   <li>User-specific permission overrides</li>
+ *   <li>User-specific permission overrides (can explicitly deny)</li>
  *   <li>User's groups (with parent group inheritance)</li>
  *   <li>Default group</li>
+ *   <li>OP status grants all permissions (unless explicitly denied in step 1)</li>
  * </ol>
+ *
+ * <p>OP status is checked from both {@code permissions.json} and MC's native {@code ops.json}.
+ * This ensures that vanilla {@code /op} and {@code /deop} commands work with Alloy's permission system.
  *
  * <p>Supports wildcard permissions ("*") and negated permissions (prefixed with "-").
  */
 public class FilePermissionProvider implements PermissionProvider {
 
     private final Path configFile;
+    private final Path opsFile;
     private volatile PermissionConfig config;
+
+    /** Cached set of OP UUIDs from ops.json; refreshed on each isOp() call if file changed */
+    private volatile Set<UUID> opsJsonCache = Set.of();
+    private volatile long opsJsonLastModified = 0;
 
     public FilePermissionProvider(Path dataDir) {
         this.configFile = dataDir.resolve("permissions.json");
+        this.opsFile = dataDir.resolve("ops.json");
     }
 
     @Override
     public void onEnable() {
         reload();
+        refreshOpsJson();
     }
 
     @Override
@@ -58,17 +78,17 @@ public class FilePermissionProvider implements PermissionProvider {
                 this.config = new PermissionConfig(Map.of(), Map.of());
             }
         }
+        refreshOpsJson();
     }
 
     @Override
     public boolean hasPermission(UUID playerId, String playerName, String permission) {
         PermissionConfig cfg = this.config;
-        if (cfg == null) return false;
+        if (cfg == null) return isOp(playerId);
 
-        // 1. Check user-specific overrides
+        // 1. Check user-specific overrides (highest priority — can deny even for OPs)
         PermissionUser user = findUser(cfg, playerId, playerName);
         if (user != null) {
-            // Check direct user permission overrides
             Boolean userPerm = checkNodeInMap(user.permissions(), permission);
             if (userPerm != null) return userPerm;
 
@@ -81,21 +101,66 @@ public class FilePermissionProvider implements PermissionProvider {
         }
 
         // 2. Check default group
-        return checkGroupPermission(cfg, "default", permission, new HashSet<>());
+        if (checkGroupPermission(cfg, "default", permission, new HashSet<>())) {
+            return true;
+        }
+
+        // 3. Check registered permission defaults from the PermissionRegistry.
+        //    Mods register permissions with defaults (TRUE = all players, OP = ops only).
+        //    This ensures PermissionDefault.TRUE is honored even without explicit group entries.
+        PermissionRegistry.PermissionInfo info = AlloyAPI.permissionRegistry().get(permission);
+        if (info != null) {
+            return switch (info.defaultValue()) {
+                case TRUE -> true;
+                case FALSE -> false;
+                case OP -> isOp(playerId);
+            };
+        }
+
+        // 4. Unregistered permissions: OP players have all by default
+        //    (unless explicitly denied via user overrides above)
+        return isOp(playerId);
     }
 
     @Override
     public boolean isOp(UUID playerId) {
+        // Check permissions.json first
         PermissionConfig cfg = this.config;
-        if (cfg == null) return false;
-
-        for (Map.Entry<String, PermissionUser> entry : cfg.users().entrySet()) {
-            // Match by UUID string or player name
-            if (entry.getKey().equalsIgnoreCase(playerId.toString())) {
-                return entry.getValue().op();
+        if (cfg != null) {
+            for (Map.Entry<String, PermissionUser> entry : cfg.users().entrySet()) {
+                if (entry.getKey().equalsIgnoreCase(playerId.toString())) {
+                    if (entry.getValue().op()) return true;
+                }
             }
         }
-        return false;
+
+        // Also check MC's native ops.json
+        refreshOpsJson();
+        return opsJsonCache.contains(playerId);
+    }
+
+    @Override
+    public void setOp(UUID playerId, String playerName, boolean op) {
+        setUserOp(playerName, op);
+        updateOpsJson(playerId, playerName, op);
+    }
+
+    /**
+     * Sets the op flag in permissions.json for the given user.
+     */
+    public void setUserOp(String userName, boolean op) {
+        PermissionConfig cfg = this.config;
+        Map<String, PermissionUser> users = new LinkedHashMap<>(cfg.users());
+
+        PermissionUser existing = users.get(userName);
+        if (existing != null) {
+            users.put(userName, new PermissionUser(existing.groups(), existing.permissions(), op));
+        } else {
+            users.put(userName, new PermissionUser(List.of(), Map.of(), op));
+        }
+
+        this.config = new PermissionConfig(cfg.groups(), users);
+        saveQuietly();
     }
 
     /**
@@ -181,11 +246,91 @@ public class FilePermissionProvider implements PermissionProvider {
         saveQuietly();
     }
 
+    /**
+     * Returns the path to the ops.json file (for commands that need to read/write it).
+     */
+    public Path opsFile() {
+        return opsFile;
+    }
+
+    // =================== Internal helpers ===================
+
     private void saveQuietly() {
         try {
             config.save(configFile);
         } catch (IOException e) {
             System.err.println("[AlloyCore] Failed to save permissions: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Re-reads ops.json if the file has been modified since last read.
+     */
+    private void refreshOpsJson() {
+        try {
+            if (!Files.exists(opsFile)) return;
+
+            long lastMod = Files.getLastModifiedTime(opsFile).toMillis();
+            if (lastMod == opsJsonLastModified) return;
+
+            String json = Files.readString(opsFile, StandardCharsets.UTF_8);
+            JsonArray array = JsonParser.parseString(json).getAsJsonArray();
+
+            Set<UUID> ops = new HashSet<>();
+            for (JsonElement element : array) {
+                JsonObject entry = element.getAsJsonObject();
+                if (entry.has("uuid")) {
+                    try {
+                        ops.add(UUID.fromString(entry.get("uuid").getAsString()));
+                    } catch (IllegalArgumentException ignored) {}
+                }
+            }
+
+            this.opsJsonCache = Set.copyOf(ops);
+            this.opsJsonLastModified = lastMod;
+        } catch (Exception e) {
+            // Don't crash on parse errors — just keep the old cache
+        }
+    }
+
+    /**
+     * Adds or removes a player from MC's native ops.json.
+     */
+    private void updateOpsJson(UUID playerId, String playerName, boolean op) {
+        try {
+            JsonArray array;
+            if (Files.exists(opsFile)) {
+                String json = Files.readString(opsFile, StandardCharsets.UTF_8);
+                array = JsonParser.parseString(json).getAsJsonArray();
+            } else {
+                array = new JsonArray();
+            }
+
+            // Remove existing entry for this UUID
+            String uuidStr = playerId.toString();
+            JsonArray filtered = new JsonArray();
+            for (JsonElement element : array) {
+                JsonObject entry = element.getAsJsonObject();
+                if (!entry.has("uuid") || !entry.get("uuid").getAsString().equals(uuidStr)) {
+                    filtered.add(entry);
+                }
+            }
+
+            if (op) {
+                // Add new entry
+                JsonObject entry = new JsonObject();
+                entry.addProperty("uuid", uuidStr);
+                entry.addProperty("name", playerName);
+                entry.addProperty("level", 4);
+                entry.addProperty("bypassesPlayerLimit", false);
+                filtered.add(entry);
+            }
+
+            com.google.gson.Gson gson = new com.google.gson.GsonBuilder().setPrettyPrinting().create();
+            Files.writeString(opsFile, gson.toJson(filtered), StandardCharsets.UTF_8);
+            opsJsonLastModified = 0; // Force refresh on next read
+        } catch (IOException e) {
+            System.err.println("[AlloyCore] Failed to update ops.json: " + e.getMessage());
         }
     }
 

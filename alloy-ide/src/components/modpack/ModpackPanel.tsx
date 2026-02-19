@@ -9,15 +9,19 @@ import {
   Server,
   Globe,
   FileArchive,
-  AlertTriangle,
   Save,
   RefreshCw,
+  Download,
+  Settings,
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { useStore } from "../../lib/store";
 import { showToast } from "../ui/Toast";
-import type { ModpackMod, ModpackManifest } from "../../lib/types";
+import type { ModpackMod, ModpackManifest, ModDependency } from "../../lib/types";
+import ConflictResolver from "./ConflictResolver";
+import DependencyEditor from "./DependencyEditor";
+import ModConfigEditor from "./ModConfigEditor";
 
 const ENV_ICONS: Record<string, typeof Monitor> = {
   client: Monitor,
@@ -42,6 +46,7 @@ export default function ModpackPanel() {
   const [manifest, setManifest] = useState<ModpackManifest | null>(null);
   const [loading, setLoading] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [configMod, setConfigMod] = useState<ModpackMod | null>(null);
 
   const loadManifest = useCallback(async () => {
     if (!currentProject) return;
@@ -112,6 +117,7 @@ export default function ModpackPanel() {
       source_path: null,
       enabled: true,
       description: null,
+      dependencies: [],
     };
     setManifest({ ...manifest, mods: [...manifest.mods, newMod] });
     setDirty(true);
@@ -146,6 +152,17 @@ export default function ModpackPanel() {
     }
   };
 
+  const updateModDeps = (modId: string, dependencies: ModDependency[]) => {
+    if (!manifest) return;
+    setManifest({
+      ...manifest,
+      mods: manifest.mods.map((m) =>
+        m.id === modId ? { ...m, dependencies } : m
+      ),
+    });
+    setDirty(true);
+  };
+
   const updateModField = (modId: string, field: keyof ModpackMod, value: string) => {
     if (!manifest) return;
     setManifest({
@@ -163,15 +180,30 @@ export default function ModpackPanel() {
     setDirty(true);
   };
 
-  // Environment conflict check
-  const conflicts: string[] = [];
-  if (manifest) {
-    const clientMods = manifest.mods.filter((m) => m.environment === "client" && m.enabled);
-    const serverMods = manifest.mods.filter((m) => m.environment === "server" && m.enabled);
-    if (clientMods.length > 0 && serverMods.length > 0) {
-      conflicts.push("Pack has both client-only and server-only mods — verify this is intentional");
+  const [exporting, setExporting] = useState(false);
+
+  const exportPack = async () => {
+    if (!currentProject || !manifest) return;
+    const outputPath = await save({
+      defaultPath: `${manifest.name.replace(/\s+/g, "-").toLowerCase()}-${manifest.version}.alloypack`,
+      filters: [{ name: "Alloy Modpack", extensions: ["alloypack"] }],
+    });
+    if (!outputPath) return;
+
+    setExporting(true);
+    try {
+      const result = await invoke<string>("export_modpack", {
+        projectPath: currentProject.path,
+        outputPath,
+      });
+      showToast("success", result);
+    } catch (err) {
+      showToast("error", `Export failed: ${err}`);
+    } finally {
+      setExporting(false);
     }
-  }
+  };
+
 
   if (!currentProject || currentProject.project_type !== "modpack") {
     return (
@@ -210,6 +242,14 @@ export default function ModpackPanel() {
             </button>
           )}
           <button
+            onClick={exportPack}
+            disabled={exporting}
+            className="p-1 rounded text-stone-500 hover:text-ember hover:bg-obsidian-700 transition-colors disabled:opacity-50"
+            title="Export .alloypack"
+          >
+            <Download size={12} className={exporting ? "animate-pulse" : ""} />
+          </button>
+          <button
             onClick={loadManifest}
             className="p-1 rounded text-stone-500 hover:text-stone-200 hover:bg-obsidian-700 transition-colors"
             title="Reload"
@@ -237,17 +277,10 @@ export default function ModpackPanel() {
         </div>
       </div>
 
-      {/* Conflict warnings */}
-      {conflicts.length > 0 && (
-        <div className="px-3 py-1.5 bg-yellow-400/10 border-b border-yellow-400/20">
-          {conflicts.map((c, i) => (
-            <div key={i} className="flex items-center gap-1.5 text-yellow-400 text-[10px]">
-              <AlertTriangle size={10} />
-              <span>{c}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* Conflict resolver */}
+      <div className="border-b border-obsidian-700">
+        <ConflictResolver />
+      </div>
 
       {/* Action bar */}
       <div className="flex items-center gap-1 px-3 py-1.5 border-b border-obsidian-700">
@@ -323,6 +356,11 @@ export default function ModpackPanel() {
                     <span className="text-[10px] text-stone-600">v{mod.version}</span>
                     <span className="text-[10px] text-stone-600 capitalize">{mod.source}</span>
                   </div>
+                  <DependencyEditor
+                    mod={mod}
+                    availableMods={manifest.mods}
+                    onChange={(deps) => updateModDeps(mod.id, deps)}
+                  />
                 </div>
 
                 {/* Environment selector */}
@@ -335,6 +373,15 @@ export default function ModpackPanel() {
                   <option value="client">Client</option>
                   <option value="server">Server</option>
                 </select>
+
+                {/* Config */}
+                <button
+                  onClick={() => setConfigMod(mod)}
+                  className="mt-0.5 shrink-0 text-stone-600 hover:text-stone-200 opacity-0 group-hover:opacity-100 transition-all"
+                  title="Edit config"
+                >
+                  <Settings size={12} />
+                </button>
 
                 {/* Delete */}
                 <button
@@ -349,6 +396,11 @@ export default function ModpackPanel() {
           })
         )}
       </div>
+
+      {/* Config editor modal */}
+      {configMod && (
+        <ModConfigEditor mod={configMod} onClose={() => setConfigMod(null)} />
+      )}
     </div>
   );
 }
